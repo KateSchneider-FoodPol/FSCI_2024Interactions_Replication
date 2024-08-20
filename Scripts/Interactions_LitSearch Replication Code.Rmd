@@ -1,0 +1,527 @@
+---
+title: "FSCI Interactions Literature Search"
+author: "FSCI Team"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+### *Overall Objectives*
+Automated literature search of the pairs of indicators where a direct relationship was identified in the expert elicitation.
+```{r setup, warning = FALSE, messages = FALSE, results = "hide", echo = TRUE}
+### Setup required to knit this script into a markdown document
+
+    # Load the knitr package
+      library(knitr)
+    
+    # Set echo = FALSE for all code chunks will prevent the code from printing in the output file
+      knitr::opts_chunk$set(echo = FALSE)
+      
+# Set the root folder to the project root so that all file paths are relative to the main project folder
+    knitr::opts_knit$set(root.dir = './')
+  
+# Set the treatment of numbers to numerical (avoids scientific notation from showing in results)
+    options(scipen = 999)
+
+# Load packages
+    # R studio should prompt the installation of any packages not loaded on the instance where this script has been opened
+    library(dplyr)
+    library(tidyr)
+    library(readr)
+    library(remotes)
+    library(dimensionsR)
+    library(readxl)
+    library(openxlsx)
+    library(data.table)
+    library(tibble)
+    
+    # to install dimensionsR, addition commands are needed 
+    # they are commented-out to prevent re-installing :
+      # devtools::install_github("massimoaria/dimensionsR")
+    
+# Create a "not in" operator
+    `%notin%` <- Negate(`%in%`) 
+
+# Note: "$~$" adds line breaks in the html report in the knitting process.
+    
+# Color palette
+    mycolor <- c("#21908dff", "#3b518bff", "#97a4b2", "#fde725ff", "#5cc863ff")
+    
+# Set relative directory paths
+    data_in <- file.path(".", "Interactions_LitSearch", "Input Data")
+    fig_out <- file.path(".", "Interactions_LitSearch", "Figures")
+    lit_out <- file.path(".", "Interactions_LitSearch", "Literature")
+
+    
+# to access DimensionR token: 
+#   1. create .Renviron file in the same folder as the rmd file 
+#   2. set the .Renviron file in the following format: 
+#     username = "your_username"
+#     password = "your_password"
+
+# set API token 
+    token <- dimensionsR::dsAuth(username = Sys.getenv("username"),
+                                 password = Sys.getenv("password"))
+    
+    
+
+
+```
+
+## Functions 
+
+
+### Functions: ST_Build 
+```{r}
+ST_Build <- function(term){
+  # input: terms, a string  
+  #   example: "food OR nutrition"
+  # 
+  # output: search_term, a string with proper syntax for 
+  #           search phrase build 
+  # 
+  #   example: \"(food OR nutrition)\" 
+  
+  
+  # check if contains OR operators 
+  if (stringr::str_detect(term, "OR")){
+    
+    search_term = paste0('\"(', term, ')\"')
+    
+  }
+  else {
+    
+    search_term = paste0('\"', term, '\"')
+  }
+  
+  return(search_term)
+}
+```
+
+
+
+### Functions: SP_Build_normal
+```{r}
+SP_Build_normal <- function(search_terms){
+  # function: SearchPhraseBuild normal 
+  # input: search_terms, a character vector, 
+  #         example: c("food", "nutrition")
+  #
+  # output: search_phrase, a search phrase in Dimensions Query Syntax 
+  #      if search type = normal: 
+  #           return in syntax: for \"food\" and for \"nutrition\"
+  # 
+  # assumptions: 
+  #   1. established connections with dimensions API 
+  #   2. valid search terms 
+  # 
+  # dependency: ST_Build 
+  
+  # n tracks number of terms in the terms 
+  n = 0 
+  for (char in search_terms){
+    char1 = ST_Build(char)
+    n = n + 1 
+    
+    # n=1 -> init search phrase 
+    if (n < 2 ){
+      search_phrase = paste0("for ", char1)
+    }
+    # inductive step 
+    else {
+      search_phrase = paste0(search_phrase, " and for ", char1)
+    }
+  }
+  
+  return(search_phrase)
+  
+}
+```
+
+### Functions: QueryBuild 
+```{r}
+
+QueryBuild <- function(search_phrase, search_type){
+  # function: QueryBuild
+  # input: search_phrase, a Dimensions search phrase 
+  #        search_type, whether "concepts" or "normal"
+  #
+  # output: query, a Dimensions query 
+  # 
+  # assumptions: 
+  #   1. established connections with dimensions API 
+  #   2. valid search terms 
+  # 
+  
+  # query_start = "search publications "
+  query_start = "search publications in title_abstract_only "
+  
+  query_output = " return publications [basics + abstract + doi + pmcid + pmid ]"
+  
+  # query_output = " return publications [basics + abstract + doi + pmcid + pmid + concepts_scores ]"
+
+
+  if (search_type == "concepts"){
+      query_search = paste0("where ", search_phrase, 
+                            " and year in [ 1900 : 2024 ]",
+                            " and type in [ \"article\" ]")
+  }
+  else if (search_type == "normal"){
+      query_search = paste0(search_phrase,
+                            " where year in [ 1900 : 2024 ]",
+                            " and type in [ \"article\" ]")
+  }
+
+  
+  query = paste0(query_start, query_search, query_output)
+  
+  return(query)
+}  
+```
+
+
+
+### Function: DimRequest
+```{r}
+
+DimRequest <- function(query){
+  # function: dim_request 
+  # input: query, a dimensionsR syntax query 
+  # output: lit, a list that includes results 
+  #       from search string pull from dimensions 
+  # 
+  # assumptions: 
+  #   1. established connections with dimensions API 
+  #   2. valid search strings 
+  # 
+  
+  res <- dimensionsR::dsApiRequest(token = token, 
+                                 query = query,  
+                                 limit = 0, verbose = TRUE)
+  
+  return(res)
+  
+}
+
+```
+
+
+### function: assign_char 
+```{r}
+assign_char <- function(char){
+  if (length(char) == 0){
+    return (" ")
+  }
+  else return(char) 
+}
+```
+
+
+
+## search indicator sheet and export results 
+
+### import, extract search strings 
+```{r}
+# read search terms from xlsx 
+search_terms <- readxl::read_excel("Input Data/Concepts terms revised_2024.xlsx")
+
+# combine terms into one column 
+search_terms <- search_terms %>% tidyr::unite(col = "string_vec", 
+                                              sep = " AND ", na.rm = TRUE )
+
+# convert terms into character vector 
+search_terms <- search_terms %>% dplyr::pull(1)
+
+# convert vector into a list of character vectors 
+search_terms <- search_terms %>% stringr::str_split(pattern = " AND ")
+
+
+```
+
+
+### using search terms to create standard query 
+```{r}
+search_phrases <- lapply(search_terms, 
+                         SP_Build_normal)
+
+query_list <- lapply(search_phrases, QueryBuild,
+                     search_type = "normal")
+
+search_result <- lapply(query_list, DimRequest)
+
+```
+
+
+### Extract data from search results 
+```{r}
+# extract search terms 
+# bind every search into a data frame 
+# double check on query results 
+for (i in 1:length(search_result)){
+  if (typeof(search_result[[i]]) == "double"){
+      cat("index = ", i, "\n")
+      # search_result[[i]] = DimRequest(query_list[[i]])
+  }
+}
+
+result_1 <- dplyr::bind_rows(search_result, .id = "id")
+
+search_terms_df_1 <- readxl::read_excel("Input Data/Concepts terms revised_2024.xlsx")
+                   
+# add id column 
+search_terms_df_1 <- search_terms_df_1 %>% tibble::rowid_to_column()
+search_terms_df_1 <- search_terms_df_1 %>% 
+  dplyr::mutate(id = as.character(rowid)) %>%
+  dplyr::select(-rowid)
+
+# combine results 
+search_terms_df_1 <- search_terms_df_1 %>% 
+  dplyr::left_join(result_1, by = join_by(id))
+
+# replace NAs in results 
+search_terms_df_1 <- search_terms_df_1 %>% 
+  dplyr::mutate(total_count = tidyr::replace_na(total_count, 0))
+
+search_terms_df_1 <- search_terms_df_1 %>% dplyr::select(-c(data, item)) 
+
+search_terms_df_1 <- unique(search_terms_df_1)
+
+# export results 
+openxlsx::write.xlsx(search_terms_df_1, "search terms_result_7.xlsx")
+
+```
+
+### Use Python to extract further scripts 
+```{python}
+
+# header: 
+# file purpose: 
+#   1. access Dimensions database 
+#   2. download scripts 
+#   3. 
+# python version: 3.10.4 
+
+# load packages 
+import pandas as pd 
+import os
+import dimcli
+import re 
+import math
+
+# define functions 
+
+def extract_n(extract_limit):
+    """
+    purpose: extract from dimensions in large batch size (limit = 500)
+    note: if bigger than limit 500, Dimensions API could return error for query taking too long 
+    """
+
+    limit = extract_limit
+
+    for index in range(query_len):
+        query = query_list["query"][index]
+        if type(query) != str:
+            continue 
+        print(query)
+        data = dsl.query_iterative(query, limit=limit, verbose=True, force=True).as_dataframe()
+        filename = "Output/Total_output/result_" + str(id_list.at[index]) + ".xlsx"
+        data.to_excel(filename)
+        print(filename)
+        index += 1 
+
+def extract_q_index(q_file_list):
+    """
+    extract q index to re-rerun output extraction from Dimensions Database 
+    
+    input: 
+        q_file_list: a pandas dataframe that has list of filenames of files that needed to be re-reun 
+
+    output: 
+        q_index: a index that has the query that needed to be re-run 
+    """
+    q_index = [] 
+    for file in q_file_list:
+        index = re.search('[0-9]+', file).group(0)
+        q_index.append(int(index))
+
+    return(q_index)
+
+
+# set working dir 
+os.chdir("WORKING DIR")
+
+# load Excel file for query 
+file = "search terms_result_7.xlsx"
+query_list = pd.read_excel(file)
+
+
+# login Dimensions 
+dimcli.login() # requires dimcli init and API key if not set 
+dsl = dimcli.Dsl()
+
+# loop through and saves data as data frames 
+# and then save data frames as 
+query_len = len(query_list["query"])
+id_list = query_list["id"]
+
+
+"""
+commented-out to prevent override (1)
+
+extract_n(extract_limit = 500)
+
+"""
+
+# note: there are many files where the script cannot get all results 
+#   due to evaluation error and API taking too long 
+
+# index of files with incomplete files 
+# here q_index corresponds to file names xlsx and nth query 
+
+# this is the manual part of the script - we use terminal output from the python script 
+# and save them to excel to analyse which files we need to re-run 
+# we can log terminal output by using terminal: 
+# /usr/local/bin/python3 "lit_search.py" &> out.txt
+# then generate out.txt to xlsx to further analyse 
+
+# extract q_index using pandas and excel files 
+file_2 = "lit_search_ouput.xlsx"
+output_df = pd.read_excel(file_2, sheet_name="Total_Log_1")
+q_file_list = output_df.loc[output_df['Re-run file index'] == 1]['Log Output']
+q_index = extract_q_index(q_file_list)
+
+# loop through q_index with smaller iteration 
+"""
+commented out to prevent overwrite (2)
+
+for index in q_index:
+    query_index = pd.Index(id_list).get_loc(index)
+    query = query_list["query"][query_index]
+    print(query)
+    data = dsl.query_iterative(query, limit=100, verbose=True, force=True).as_dataframe()
+    filename = "Output/Total_output/result_" + str(index) + ".xlsx"
+    data.to_excel(filename)
+    print(filename)
+"""
+
+# loop through q_index with another iteration (limit = 10)
+# output_df = pd.read_excel(file_2, sheet_name="Total_Log_2")
+# q_file_list = output_df.loc[output_df['Re-run file index'] == 1]['Log Output']
+# q_index = extract_q_index(q_file_list)
+
+q_index = [159, 169, 235, 234]
+
+for index in q_index:
+    query_index = pd.Index(id_list).get_loc(index)
+    query = query_list["query"][query_index]
+    print(query)
+
+    # retrieve current data 
+    filename = "Output/Total_output/result_" + str(index) + ".xlsx"
+    data = pd.read_excel(filename)
+
+    print(filename)
+    length = math.floor(len(data) / 100) * 100 
+    try:
+        data_2 = pd.DataFrame(dsl.query_iterative(query, limit=10, skip = length, verbose=True, force=True))
+    except ValueError:
+        print("trying new dataframe method")
+        data_2 = dsl.query_iterative(query, limit=10, skip = length, verbose=True, force=True).as_dataframe()
+
+    data_whole = pd.concat([data.head(length), data_2], ignore_index= True)
+    data_whole.to_excel(filename)
+
+```
+
+### Use R to import Python output and clean them 
+```{r}
+
+# 1. import data 
+
+file_list <- list.files(path = "./Output/Total_output", pattern = "^result",
+                        full.names = TRUE)
+
+# the strings are not sorted alphabetically 
+file_list <- stringr::str_sort(file_list, numeric = TRUE)
+
+df_list <- lapply(file_list, readxl::read_excel, col_types = "text")
+
+result_df <- dplyr::bind_rows(df_list, .id = "id")
+
+# remove row id 
+result_df <- result_df %>% dplyr::select(-`...1`)
+
+# clean up 
+remove(df_list)
+
+# 2. remove not relevant titles 
+
+# check Poster Session (include caps and no caps)
+
+poster_df <- result_df %>% 
+  dplyr::filter(stringr::str_detect(result_df$title, 
+                                    stringr::fixed("poster session", 
+                                                   ignore_case = TRUE)))
+
+
+# filter out poster sessions 
+result_df <- result_df %>% dplyr::filter(!stringr::str_detect(result_df$title, 
+                                         stringr::fixed("poster session", 
+                                         ignore_case = TRUE)))
+
+
+# 3. remove abstract and title with non English languages 
+
+result_df <- result_df %>% dplyr::mutate(text = paste0(title, " ", abstract))
+
+
+result_df <- result_df %>% dplyr::mutate(cld2 = cld2::detect_language(text = text),
+                            cld3 = cld3::detect_language(text = text))
+
+
+# check on non Eng classifications 
+non_EN_df <- result_df %>% dplyr::filter(cld2 != "en" | cld3 != "en")
+
+# save df for review 
+# openxlsx::write.xlsx(non_EN_df, file = "non_en.xlsx")
+
+# we filter out non english texts 
+result_df <- result_df %>% dplyr::filter(cld2 == "en" & cld3 == "en") # removed 1141 non english articles 
+
+# save results 
+result_df <- result_df %>% dplyr::select(-c(cld2, cld3, text))
+
+# summarize how many articles are there in each query 
+result_count_df <- result_df %>% dplyr::group_by(id) %>%
+  dplyr::summarise(num_of_articles = n())
+
+# save results 
+result_count_df <- result_count_df %>% dplyr::mutate(id = as.numeric(id))
+
+
+```
+
+### Merge all results together 
+```{r}
+# merge in indicator 
+search_terms_df_1 <- readxl::read_excel("search terms_result_7.xlsx")
+
+# combine results 
+search_terms_df_1 <- search_terms_df_1 %>% 
+  dplyr::left_join(result_count_df, by = join_by(id))
+
+# filter only governance indicator queries 
+search_terms_df_1 <- search_terms_df_1 %>% 
+  dplyr::filter(!is.na(title))
+
+# check total counts by query_id 
+search_terms_df_1 %>% dplyr::group_by(id) %>% 
+  dplyr::summarise(total = n())
+
+# export to csv gz 
+# commented out to prevent override 
+# readr::write_csv(search_terms_df_1, "gov_result.csv.gz")
+
+# save results
+openxlsx::write.xlsx(search_terms_df_1, "search terms_result_8.xlsx")
+```
+

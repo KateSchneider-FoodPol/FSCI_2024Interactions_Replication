@@ -1,0 +1,305 @@
+---
+title: "FSCI 2024 Lit Search analysis"
+author: "Kate Schneider"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+### *Overall Objectives*
+This script uses the output data of the automated literature search and creates visualizations.
+```{r setup, warning = FALSE, messages = FALSE, results = "hide", echo = TRUE}
+### Setup required to knit this script into a markdown document
+    
+### Load packages
+    # R studio should prompt the installation of any packages not loaded on the instance where this script has been opened
+    
+    # Data management and multipurpose packages
+    library(knitr)
+    library(tidyverse)
+    library(readxl)
+
+    # Data visualization packages
+    library(flextable)
+
+### File management
+  
+    # Set the root folder to the project root so that all file paths are relative to the main project folder
+    knitr::opts_knit$set('./')
+    
+    # Set relative directory paths
+    data_out <- file.path(".", "Output")
+    figtab_out <- file.path(".", "Figures & Tables")
+    data_out2 <- "C:/Users/kates/Dropbox/GitHub/FSCountdownIniative/FSCI 2024/Expert Elicitation/Output Data"
+
+### Set preferred options
+    
+    # Set the treatment of numbers to numerical (avoids scientific notation from showing in results)
+    options(scipen = 999)
+  
+    # Set echo = FALSE for all code chunks will prevent the code from printing in the output file as the default setting (set to TRUE where relevant)
+    knitr::opts_chunk$set(echo = FALSE)
+
+### Functions
+    
+    # Create a "not in" operator
+    `%notin%` <- Negate(`%in%`) 
+    
+### Color palettes
+    themes_colors <- c("#21908dff", "#3b518bff", "#97a4b2", "#fde725ff", "#5cc863ff")
+
+```
+
+#### Import Data
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+gov_litcounts <- readxl::read_excel(file.path(data_out,"gov_result_screened.xlsx"))
+themes_info <- readRDS(file.path(data_out2, "Expert Elicitation_Direct Connections_combined.rds"))
+all_litcounts <- readxl::read_excel(file.path(data_out, "search terms_result_8.xlsx"))
+
+```
+
+#### Governance searches only
+
+Summarize to counts per search
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+# Aggregate to search
+  gov_litcounts <- gov_litcounts %>%
+    select(c(1:2))
+  col_names <- c("indicator_1", "indicator_2")
+  colnames(gov_litcounts) <- col_names
+  gov_litcounts <- gov_litcounts %>%
+    mutate(count = 1) %>%
+    group_by(indicator_1, indicator_2) %>%
+    summarise(count = sum(count)) 
+    # fix capitalization to merge with theme info
+      # Function to capitalize the first letter of the first word
+      capitalize_first <- function(x) {
+        sub("^([a-z])", "\\U\\1", x, perl = TRUE)
+      }
+
+      # Apply the function to each element
+        gov_litcounts$indicator_1 <- sapply(gov_litcounts$indicator_1, capitalize_first)
+        gov_litcounts$indicator_2 <- sapply(gov_litcounts$indicator_2, capitalize_first)  
+
+    # Bring in the organizing information
+      themes_info1 <- themes_info %>% select(1,4,5) %>%
+        rename(indicator_1 = from,
+               theme1 = from_theme,
+               order1 = from_order) %>%
+        unique()
+      themes_info2 <- themes_info %>% select(1,4,5) %>%
+        rename(indicator_2 = from,
+               theme2 = from_theme,
+               order2 = from_order) %>%
+        unique()
+      gov_litcounts <- gov_litcounts %>%
+        mutate(indicator_1 = case_when(indicator_1 == "Food system transformation pathway" ~ "Food system pathway",
+                                       TRUE ~ indicator_1),
+               indicator_2 = case_when(indicator_2 == "Food system transformation pathway" ~ "Food system pathway",
+                                       TRUE ~ indicator_2))
+      gov_litcounts <- left_join(gov_litcounts, themes_info1, by = "indicator_1")
+      gov_litcounts <- left_join(gov_litcounts, themes_info2, by = "indicator_2")
+      
+  # Now for any pairs that are only one governance indicator - move it to the first column
+      gov_litcounts2 <- gov_litcounts %>%
+        filter(theme2 == "Governance" & theme1 != "Governance") %>%
+         rename_with(~sub("1$", "4", .) %>% 
+                sub("2$", "3", .) %>% 
+                sub("3$", "1", .) %>% 
+                sub("4$", "2", .),
+              ends_with(c("1", "2"))) 
+      col_order <- names(gov_litcounts)
+      gov_litcounts2 <- gov_litcounts2[, col_order]
+      
+      # Now remove these rows from the main dataset
+      gov_litcounts <- gov_litcounts %>%
+        filter(!(theme2 == "Governance" & theme1 != "Governance"))
+      
+      # And merge the reordered data back
+      gov_litcounts <- rbind(gov_litcounts, gov_litcounts2)
+      gov_litcounts <- gov_litcounts %>%
+        arrange(order1)
+
+# Export table 
+    flextable::set_flextable_defaults(
+      font.family = 'Times New Roman',
+      font.size = 10)
+    gov_litcount_tbl <- gov_litcounts %>% 
+      plyr::arrange(order1, order2) %>%
+      select(c(1:3))
+    col_names <- c("Indicator 1", "Indicator 2", "Number of results")
+    colnames(gov_litcount_tbl) <- col_names
+    table1 <- flextable::flextable(gov_litcount_tbl) %>% autofit() %>%
+      set_table_properties(layout = "autofit")
+        
+    # Save table
+      save_as_docx(table1, path = file.path(figtab_out, "ED Table 3_PanelA_GovLitResults.docx"), orient = "portrait")
+
+
+```
+
+#### Visualize
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+# Investigate range
+  range(gov_litcounts$count)
+  ggplot(gov_litcounts, aes(x=count)) + geom_histogram()
+
+```
+  
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+  # Winsorize the counts at 2500 and relabel the end of the label >2500
+    gov_litcounts <- gov_litcounts %>%
+       mutate(count = case_when(count > 1000 ~ 1000,
+              TRUE ~ count))
+    ggplot(gov_litcounts, aes(x=count)) + geom_histogram()
+    
+    gov_litcounts$theme2 <- ordered(gov_litcounts$theme2, levels = c("Diets, Nutrition, & Health", "Environment, Natural resources, & Production", "Livelihoods, Poverty, & Equity", "Governance", "Resilience"))
+
+
+# Plot
+  png(file.path(figtab_out, "Governance Lit Search Counts.png"), width = 10, height = 7.5, unit = "in", res = 300)
+
+  gov_litcounts %>% 
+    # Create an ordering variable so X-axis is grouped by theme
+    group_by(indicator_1) %>%
+    mutate(var_order = seq_along(indicator_1)) %>%
+    ungroup() %>%
+  ggplot(aes(y = fct_reorder(indicator_1, order1), x = fct_reorder(indicator_2, order2), 
+             color = as.factor(theme2), size = count)) +
+    geom_point() +
+    scale_x_discrete(position = "top") +
+    scale_color_manual(values = themes_colors) +
+    scale_size_continuous(range = c(1, 12),
+                          breaks = c(1, 10, 25, 75, 150, 300, 500, 1000),
+                          labels = c(1, 10, 25, 75, 150, 300, 500, "1000+")) +     
+    theme_classic() +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 8),
+          legend.title = element_text(size =8),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.text.x = element_text(angle = 90, size = 9),
+          axis.text.x.top = element_text(vjust = 0.05, hjust = 0),
+          axis.text.y = element_text(size = 9),
+          legend.box="vertical",
+          plot.caption.position = "plot",
+          legend.location = "plot") +
+    labs(size = "Number of publications",
+         color = "") +
+    guides(color = guide_legend(order = 2, nrow = 2, byrow = TRUE, 
+                                override.aes = list(size = 3)),
+           size = guide_legend(order = 1, nrow = 1))
+  dev.off()
+
+```
+
+#### All searches
+
+Summarize to counts per search
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+# Aggregate to search
+  all_litcounts <- all_litcounts %>%
+    select(c(1:2, 7:8))
+  col_names <- c("indicator_1", "indicator_2", "Results after screening", "Preliminary results")
+  colnames(all_litcounts) <- col_names
+    # fix capitalization to merge with theme info
+      # Function to capitalize the first letter of the first word
+      capitalize_first <- function(x) {
+        sub("^([a-z])", "\\U\\1", x, perl = TRUE)
+      }
+
+      # Apply the function to each element
+        all_litcounts$indicator_1 <- sapply(all_litcounts$indicator_1, capitalize_first)
+        all_litcounts$indicator_2 <- sapply(all_litcounts$indicator_2, capitalize_first)  
+
+    # Bring in the organizing information
+      themes_info1 <- themes_info %>% select(1,4,5) %>%
+        rename(indicator_1 = from,
+               theme1 = from_theme,
+               order1 = from_order) %>%
+        unique()
+      themes_info2 <- themes_info %>% select(1,4,5) %>%
+        rename(indicator_2 = from,
+               theme2 = from_theme,
+               order2 = from_order) %>%
+        unique()
+      all_litcounts <- all_litcounts %>%
+        mutate(indicator_1 = case_when(indicator_1 == "Food system transformation pathway" ~ "Food system pathway",
+                                       indicator_1 == "Consuming all essential food groups" ~ "All 5 food groups",
+                                       indicator_1 == "Dietary protection from non-communicable disease" ~ "NCD-Protect",
+                                       indicator_1 == "Dietary risk of non-communicable disease" ~ "NCD-Risk",
+                                       TRUE ~ indicator_1),
+               indicator_2 = case_when(indicator_2 == "Food system transformation pathway" ~ "Food system pathway",
+                                       indicator_2 == "Consuming all essential food groups" ~ "All 5 food groups",
+                                       indicator_2 == "Dietary protection from non-communicable disease" ~ "NCD-Protect",
+                                       indicator_2 == "Dietary risk of non-communicable disease" ~ "NCD-Risk",
+                                       TRUE ~ indicator_2))
+      all_litcounts <- left_join(all_litcounts, themes_info1, by = "indicator_1")
+      all_litcounts <- left_join(all_litcounts, themes_info2, by = "indicator_2")
+      
+      all_litcounts <- all_litcounts %>%
+        arrange(order1, order2) %>%
+        # Remove the pairs involving governance - these are already captured in Panel A which underwent more screening
+        filter(!(theme1 == "Governance" | theme2 == "Governance"))
+
+# Export table that includes all searches EXCEPT those involving a governance indicator
+    flextable::set_flextable_defaults(
+      font.family = 'Times New Roman',
+      font.size = 10)
+    all_litcounts_tbl <- all_litcounts %>% 
+      plyr::arrange(order1, order2) %>%
+      select(c(1:3))
+    col_names <- c("Indicator 1", "Indicator 2", "Number of results")
+    colnames(all_litcounts_tbl) <- col_names
+    table2 <- flextable::flextable(all_litcounts_tbl) %>% autofit() %>%
+      set_table_properties(layout = "autofit")
+        
+    # Save table
+      save_as_docx(table2, path = file.path(figtab_out, "ED Table 3_PanelB_AllLitResults.docx"), orient = "portrait")
+
+```
+
+#### Visualize
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+# Investigate range
+  range(gov_litcounts$count)
+  ggplot(gov_litcounts, aes(x=count)) + geom_histogram()
+
+```
+  
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+  # Winsorize the counts at 2500 and relabel the end of the label >2500
+    gov_litcounts <- gov_litcounts %>%
+       mutate(count = case_when(count > 1000 ~ 1000,
+              TRUE ~ count))
+    ggplot(gov_litcounts, aes(x=count)) + geom_histogram()
+
+# Plot
+  png(file.path(figtab_out, "Governance Lit Search Counts.png"), width = 10, height = 7.5, unit = "in", res = 300)
+
+  gov_litcounts %>% 
+    # Create an ordering variable so X-axis is grouped by theme
+    group_by(indicator_1) %>%
+    mutate(var_order = seq_along(indicator_1)) %>%
+    ungroup() %>%
+  ggplot(aes(y = fct_reorder(indicator_1, order1), x = fct_reorder(indicator_2, order2), fill = count)) +
+    geom_tile() +
+    scale_x_discrete(position = "top") +
+    scale_fill_gradient(low = "#D4E6F1", high = "#212F3C",
+                        breaks = c(1,25,50,75,100, 250, 500, 750, 1000),
+                        labels = c("1", "25", "50", "75", "100", "250", "500", "750", "1000+")) +
+    theme_classic() +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 7),
+          legend.title = element_text(size = 8),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.text.x = element_text(angle = 90, size = 9),
+          axis.text.x.top = element_text(vjust = 0.05, hjust = 0),
+          axis.text.y = element_text(size = 9),
+          plot.caption.position = "plot",
+          legend.location = "plot",
+          legend.key.width = unit(1, "null")) +
+    labs(fill = "Number of publications")
+  dev.off()
+
+```

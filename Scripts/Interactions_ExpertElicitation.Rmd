@@ -1,0 +1,913 @@
+---
+title: "Interactions"
+author: "Kate Schneider"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+### *Overall Objectives*
+This script imports, manages, analyzes and visualizes the results of the expert elicitation of interactions between pairs of FSCI indicators. Note that the experts entered responses in two different columns of a spreadsheet based on directionality but did not "complete the matrix" (every relationship should be marked in two places from indicator A to indicator B and in the second column when you get to indicator B as the first of the pair, marking that indicator B is caused by indicator A - most are only marked in one place in the spreadsheet), so we first test for this and then have to combine responses from both columns to get the full picture. 
+```{r setup, warning = FALSE, messages = FALSE, results = "hide", echo = TRUE}
+### Setup required to knit this script into a markdown document
+
+  # Load the knitr package
+    library(knitr)
+  
+  # Set echo = FALSE for all code chunks will prevent the code from printing in the output file
+    knitr::opts_chunk$set(echo = FALSE)
+      
+  # Set the root folder to the project root so that all file paths are relative to the main project folder
+    knitr::opts_knit$set('./')
+  
+  # Set the treatment of numbers to numerical (avoids scientific notation from showing in results)
+    options(scipen = 999)
+
+# Load packages
+  # R studio should prompt the installation of any packages not loaded on the instance where this script has been opened
+  library(tidyverse)
+  library(here)
+  library(readxl)
+  library(writexl)
+  library(heatmaply)
+  library(igraph)
+  library(colormap)
+  library(ggraph)
+  library(stringr)
+  library(pheatmap)
+  library(RColorBrewer)
+  library(ggforce)
+  library(collapse)
+  library(cowplot)
+
+# Create a "not in" operator
+  `%notin%` <- Negate(`%in%`) 
+
+# Note: "$~$" adds line breaks in the html report in the knitting process.
+    
+# Color palette
+  mycolor <- c("#21908dff", "#3b518bff", "#97a4b2", "#fde725ff", "#5cc863ff")
+    
+# Set relative directory paths
+  data_in <- here::here("Expert Elicitation", "Input Data")
+  fig_out <- here::here("Expert Elicitation", "Figures")
+  data_out <- here::here("Expert Elicitation", "Output Data")
+```
+
+$~$
+
+Import and shape the expert elicitation data
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+# Import the matrix completed by expert elicitation
+  rawdata_all <- readxl::read_xlsx(file.path(data_in,"Interaction_scoring_sheet_All Groups_2024_March.xlsx"), sheet = "Sheet 1 - interaction_scoring_s")
+  labels <- readxl::read_xlsx(file.path(data_in,"Interaction_scoring_sheet_All Groups_2024_March.xlsx"), sheet = "Indicator names and labels")
+
+# Start with the first direction of relationship (Column E)
+  rawdata <- rawdata_all %>%
+    select(c(1:2,4:5)) %>%
+    # Label the columns
+    rename(theme = 1,
+           indicator = 2,
+           dependent = 3,
+           relationship = 4) %>%
+    # Now remove the rows of header information and empty end rows
+    filter(row_number() %notin% 1,
+           row_number() %notin% 2452:2458) %>%
+    # Factor the indicator names and themes, make the relationship numeric
+    mutate(theme = as.factor(theme),
+           indicator = as.factor(indicator),
+           dependent = as.factor(dependent),
+           relationship = as.numeric(relationship)) %>%
+    # Replace NA with 0 (no relationship)
+    mutate(relationship = case_when(is.na(relationship) ~ 0,
+                                    TRUE ~ relationship))
+
+# Merge in the short labels for the indicators for figures
+  rawdata <- left_join(rawdata, labels, by = "indicator") %>%
+    rename(from = short_label,
+           from_theme = theme.y) %>%
+    select(-c(indicator_order))
+  rawdata <- left_join(rawdata, labels, by = c("dependent" = "indicator")) %>%
+    rename(to = short_label,
+           to_theme = theme) %>%
+    select(-c(theme.x, indicator, dependent, indicator_order)) %>%
+    relocate(relationship, .after = to_theme) %>%
+    mutate(to = as.factor(to),
+           from = as.factor(from),
+           from_theme = as.factor(from_theme),
+           to_theme = as.factor(to_theme))
+
+# Remove the theme columns
+  raw_wide <- rawdata %>%
+    select(-c(contains("theme"))) %>%
+    # Pivot wide
+    pivot_wider(names_from = to, 
+                values_from = relationship, 
+                values_fill = 0) %>%
+    relocate("Cost of healthy diet", .after = from)
+  
+# Confirm indicators are in the correct order
+  raw_wide <- left_join(raw_wide, labels, by = c("from" = "short_label")) %>%
+    select(-c(indicator, theme))
+  raw_wide <- raw_wide[order(raw_wide$indicator_order), ]
+  raw_wide <- raw_wide %>%
+    select(-c(indicator_order)) %>%
+    relocate(`Social capital index`, .before = `Mobile phones per 100 people`)
+
+
+# Convert to a matrix
+# Remove the first column because matrices can only have one class of data
+  matrix1 <- as.matrix(raw_wide[, -1]) # eliminate rownames column to get numerical matrix
+
+# Add back the row names
+  rownames(matrix1) <- raw_wide$from # assign rownames
+
+# Square and cube the matrix
+  matrix2 <- matrix1 %*% matrix1
+  matrix3 <- matrix1 %*% matrix1 %*% matrix1
+
+# Reshape the second and third order connections into long data frames
+# Create a function to reshape matrix to data frame
+  reshapetodf <- function(input_matrix) {
+    input <- data.frame(input_matrix) 
+    input$from <- row.names(input)   
+    input <- input %>%
+      pivot_longer(1:50, names_to = "to", values_to = "relationship") %>%
+      mutate(to = stringr::str_replace_all(to, "\\.", " "),        
+             to = stringr::str_replace_all(to, "   ", " "),
+             to = case_when(to == "NCD Protect" ~ "NCD-Protect",
+                            to == "NCD Risk" ~ "NCD-Risk",
+                            TRUE ~ to)) 
+    return(input)
+  }
+
+# Execute the function on the matrices
+  df_order2 <- reshapetodf(matrix2)
+  df_order3 <- reshapetodf(matrix3)
+
+# Add from theme to the long second and third order connections
+  rawdata_from <- rawdata %>% select(c("from", "from_theme")) %>% unique()
+  df_order2 <- left_join(df_order2, rawdata_from, by = "from") 
+  df_order3 <- left_join(df_order3, rawdata_from, by = "from") 
+
+# Add indicator order for from variable
+  rawdata <- left_join(rawdata, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    rawdata <- rawdata %>% rename(from_order = indicator_order)
+  df_order2 <- left_join(df_order2, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    df_order2 <- df_order2 %>% rename(from_order = indicator_order)
+  df_order3 <- left_join(df_order3, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    df_order3 <- df_order3 %>% rename(from_order = indicator_order)
+
+```
+$~$
+
+Repeat for the relationships identified in the other direction (Column F)
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+# Load data and clean
+  rawdata2 <- rawdata_all %>%
+    select(c(1:2,4,6)) %>%
+    # Label the columns
+    rename(theme = 1,
+           dependent = 2,
+           indicator = 3,
+           relationship = 4) %>%
+    # Fix the open budget index name in the dependent column
+    mutate(dependent = case_when(dependent == "Open Budget Index" ~ "Open Budget Index Score",
+                                 TRUE ~ dependent)) %>%
+    # Now remove the rows of header information and empty end rows
+    filter(row_number() %notin% 1,
+           row_number() %notin% 2452:2458) %>%
+    # Factor the indicator names and themes, make the relationship numeric
+    mutate(theme = as.factor(theme),
+           indicator = as.factor(indicator),
+           dependent = as.factor(dependent),
+           relationship = as.numeric(relationship)) %>%
+    # Replace NA with 0 (no relationship)
+    mutate(relationship = case_when(is.na(relationship) ~ 0,
+                                    TRUE ~ relationship))
+
+# Merge in the short labels for the indicators for figures
+  rawdata2 <- left_join(rawdata2, labels, by = "indicator") %>%
+    rename(from = short_label,
+           from_theme = theme.y) %>%
+    select(-c(indicator_order))
+  rawdata2 <- left_join(rawdata2, labels, by = c("dependent" = "indicator")) %>%
+    rename(to = short_label,
+           to_theme = theme) %>%
+    select(-c(1:3)) %>%
+    relocate(relationship, .after = to_theme) %>%
+    select(-c(indicator_order))
+  
+  # Remove the theme columns
+  raw_wide2 <- rawdata2 %>%
+    select(-c(contains("theme"))) %>%
+    # Pivot wide
+    pivot_wider(names_from = to, 
+                values_from = relationship, 
+                values_fill = 0) %>%
+    relocate("Cost of healthy diet", .after = from) %>%
+    filter(!(is.na(from)))
+  
+# Confirm indicators are in the correct order
+  raw_wide2 <- left_join(raw_wide2, labels, by = c("from" = "short_label")) %>%
+    select(-c(indicator, theme))
+  raw_wide2 <- raw_wide2[order(raw_wide2$indicator_order), ]
+  raw_wide2 <- raw_wide2 %>%
+    select(-c(indicator_order)) %>%
+    relocate(`Social capital index`, .before = `Mobile phones per 100 people`)
+
+# Convert to matrix
+  matrix1_v2 <- as.matrix(raw_wide2[, -1]) # eliminate rownames column to get numerical matrix
+
+# Add back the row names
+  rownames(matrix1_v2) <- raw_wide2$from # assign rownames
+
+# Square and cube the matrix
+  matrix2_v2 <- matrix1_v2 %*% matrix1_v2
+  matrix3_v2 <- matrix1_v2 %*% matrix1_v2 %*% matrix1_v2
+
+# Reshape the second and third order connections into long data frames
+# Add from theme to the long second and third order connections
+  rawdata_from2 <- rawdata2 %>% select(c("from", "from_theme")) %>% unique %>%
+    filter(!(is.na(from))) %>%
+    collapse::roworderv(neworder = 50)
+
+  df_order2_v2 <- reshapetodf(matrix2_v2) 
+  df_order3_v2 <- reshapetodf(matrix3_v2) 
+
+# Add from theme to the long second and third order connections
+  rawdata_from_v2 <- rawdata2 %>% select(c("from", "from_theme")) %>% unique() %>%
+    filter(!(is.na(from)))
+  df_order2_v2 <- left_join(df_order2_v2, rawdata_from, by = "from") 
+  df_order3_v2 <- left_join(df_order3_v2, rawdata_from, by = "from") 
+  
+# Add indicator order variable for the from variable
+  rawdata2 <- left_join(rawdata2, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    rawdata2 <- rawdata2 %>% rename(from_order = indicator_order)
+  df_order2_v2 <- left_join(df_order2_v2, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    df_order2_v2 <- df_order2_v2 %>% rename(from_order = indicator_order)
+  df_order3_v2 <- left_join(df_order3_v2, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    df_order3_v2 <- df_order3_v2 %>% rename(from_order = indicator_order)
+
+```
+
+Create a new data frame that merges column E and F information, ensuring all relationships identified are included, and preserving the directionality of the relationships.  
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+
+# Create combined matrix by adding matrix 1 (column E) to matrix1_v2 (column F)
+
+# Add the matrix elements together into a new matrix
+  combo_matrix_keepbidirect <- matrix1 + matrix1_v2
+
+# Now any cells with causality in both directions have a value of 2 - replace with 1
+  combo_matrix <- combo_matrix_keepbidirect
+  combo_matrix[combo_matrix==2] <- 1
+
+# Reshape to data frame, fixing indicator names that lose punctuation in the matrix conversion
+  combo_df <- reshapetodf(combo_matrix) %>%
+    mutate(to = str_replace_all(to, "Conservation of genetic resources  plants", "Conservation of genetic resources, plants")) %>%
+    mutate(to = str_replace_all(to, "Conservation of genetic resources  animals", "Conservation of genetic resources, animals")) %>%
+    mutate(to = str_replace_all(to, "Minimum dietary diversity  women", "Minimum dietary diversity, women")) %>%
+    mutate(to = str_replace_all(to, "Minimum dietary diversity  child", "Minimum dietary diversity, child")) %>%
+    mutate(to = str_replace_all(to, "Ultra processed food sales", "Ultra-processed food sales"))
+  
+  combo_df_keepbidirect <- reshapetodf(combo_matrix_keepbidirect)  %>%
+    mutate(to = str_replace_all(to, "Conservation of genetic resources  plants", "Conservation of genetic resources, plants")) %>%
+    mutate(to = str_replace_all(to, "Conservation of genetic resources  animals", "Conservation of genetic resources, animals"))  %>%
+    mutate(to = str_replace_all(to, "Minimum dietary diversity  women", "Minimum dietary diversity, women")) %>%
+    mutate(to = str_replace_all(to, "Minimum dietary diversity  child", "Minimum dietary diversity, child")) %>%
+    mutate(to = str_replace_all(to, "Ultra processed food sales", "Ultra-processed food sales"))
+
+# Add from theme 
+  combo_df <- left_join(combo_df, rawdata_from, by = "from") 
+  combo_df_keepbidirect <- left_join(combo_df_keepbidirect, rawdata_from, by = "from") 
+
+# Square and cube the matrix
+  matrix2_combo <- combo_matrix %*% combo_matrix
+  matrix3_combo <- combo_matrix %*% combo_matrix %*% combo_matrix
+
+# Reshape matrices to data frame
+  df_order2_combo <- reshapetodf(matrix2_combo) 
+  df_order3_combo <- reshapetodf(matrix3_combo) 
+
+# Add from theme to the long second and third order connections
+  df_order2_combo <- left_join(df_order2_combo, rawdata_from, by = "from")
+  df_order3_combo <- left_join(df_order3_combo, rawdata_from, by = "from") 
+  
+# Add indicator order variable for the from variable
+  combo_df <- left_join(combo_df, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    combo_df <- combo_df %>% rename(from_order = indicator_order)
+  combo_df_keepbidirect <- left_join(combo_df_keepbidirect, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    combo_df_keepbidirect <- combo_df_keepbidirect %>% rename(from_order = indicator_order)
+  df_order2_combo <- left_join(df_order2_combo, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    df_order2_combo <- df_order2_combo %>% rename(from_order = indicator_order)
+  df_order3_combo <- left_join(df_order3_combo, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    df_order3_combo <- df_order3_combo %>% rename(from_order = indicator_order)
+    
+# Add indicator order for the to variable
+    
+
+# Clean up
+  rm(raw_wide, raw_wide2)
+  
+```
+
+$~$
+
+Now export the combined matrix pairs into the literature search analysis as they will form the basis of the first step in the search (naive search).
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+
+# Develop a dataframe of the indicator pairs
+  indicatorpairs <- combo_df %>%
+    filter(relationship == 1) %>%
+    filter(from != to) %>% ## Remove identity 
+    select(from, to)
+
+# Now remove duplicate pairings (regardless of their order in to or from columns)
+# function(x) is defining a function that sorts the elements of each row of the data frame data, and then concatenates them into a single string with "-" as the separator. This is done for each row of the data frame using apply, resulting in a vector of sorted pairs of "from" and "to" values for each row.
+  sorted_pairs <- apply(indicatorpairs, 1, function(x) paste(sort(x), collapse = " AND "))
+    
+# Create a boolean column that marks the second occurence of a pair as a duplicate
+  duplicate_pairs <- as.data.frame(duplicated(sorted_pairs) | duplicated(sorted_pairs, fromLast = TRUE))
+  duplicate_pairs <- duplicate_pairs %>%
+    rename(duplicate = 1)
+  
+# Add in the duplication information to the sorted pairs
+  searchterms <- cbind(sorted_pairs, duplicate_pairs) %>%
+    # Drop the duplicate rows
+    filter(duplicate != TRUE) %>%
+    # Rename 
+    rename(naive_search = 1) %>%
+    select(-c(duplicate))
+
+# Now split back up into multiple columns
+   searchterms <- searchterms %>%
+     tidyr::separate(naive_search, c("concept 1", "concept 2"), sep = " AND ")
+    
+  # Manually revise some search terms
+    # Create a find and replace function:
+    findreplace <- function(x, y, data) {
+      for (i in seq_along(x)) {
+        data <- mutate(data, across(everything(), ~ gsub(x[i], y[i], .x)))
+      }
+      return(data)
+    }
+   
+    changefrom <- c("NCD-Protect", "NCD-Risk", "Food system pathway", "All 5 food groups")
+    changeto <- c("dietary protection from non-communicable disease", "dietary risk of non-communicable disease", "food system transformation pathway", "consuming all essential food groups")
+    searchterms <- findreplace(changefrom, changeto, searchterms) 
+    searchterms <- searchterms %>% mutate(across(everything(), tolower))
+    changefrom <- c("milan", "gdp")
+    changeto <- c("Milan", "GDP")
+    searchterms <- findreplace(changefrom, changeto, searchterms) 
+    
+# Save to the literature search folder as .csv
+    writexl::write_xlsx(searchterms, path = ("./Interactions_LitSearch/Input Data/Concepts terms revised_13April2024.xlsx"), col_names = TRUE)
+   
+```
+
+$~$
+
+### Analysis of combined dataset
+
+Direct relationships, directed from row to column
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+  
+  png(file.path(fig_out, "Direct connections Combined - Heatmap.png"), width = 7.5, height = 10, unit = "in", res = 300)
+
+  combo_df %>% 
+    # Create an ordering variable so X-axis is grouped by theme
+    group_by(from) %>%
+    mutate(var_order = seq_along(from)) %>%
+    ungroup() %>%
+    ggplot(aes(y = fct_reorder(from, from_order), x = fct_reorder(to, var_order), fill = as.factor(relationship))) +
+      geom_tile() +
+      facet_col(vars(from_theme), scales = "free_y", space = "free") +
+      scale_y_discrete(limits = rev) +
+      scale_x_discrete(position = "top") +
+      scale_fill_manual(values = c("white",  "#244369"),
+                        breaks = c(0,1)) +
+      theme_classic() +
+      theme(legend.position = "none",
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            axis.text.x = element_text(angle = 90, size = 7),
+            axis.text.x.top = element_text(vjust = 0.05, hjust = 0),
+            axis.text.y = element_text(size = 7)) 
+  
+dev.off()
+```
+$~$
+
+Direct relationships, including bidirectional causality
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+
+# Bring back theme 
+  combo_df_keepbidirect <- left_join(combo_df_keepbidirect, rawdata[,c("to", "to_theme")], by = "to")
+  
+# Replace identity cells as NA
+    combo_df_keepbidirect <-   combo_df_keepbidirect %>%
+      mutate(relationship = case_when(from == to ~ 0,
+                TRUE ~ relationship))
+
+
+  plot <- combo_df_keepbidirect %>% 
+    # Create an ordering variable so X-axis is grouped by theme
+    group_by(from) %>%
+    mutate(var_order = seq_along(from)) %>%
+    ungroup() %>%
+    # Create an ordering variable for theme
+    mutate(theme_order = case_when(from_theme == "Diets, Nutrition, & Health" ~ 1,
+                                   from_theme == "Environment, Natural resources, & Production" ~ 2,
+                                   from_theme == "Livelihoods, Poverty, & Equity" ~ 3,
+                                   from_theme == "Governance" ~ 4,
+                                   from_theme == "Resilience" ~ 5)) %>%
+
+    ggplot(aes(y = fct_reorder(from, from_order), x = fct_reorder(to, var_order), fill = as.factor(relationship))) +
+      geom_tile() +
+      facet_col(vars(fct_reorder(from_theme,theme_order)), scales = "free_y", space = "free") +
+      scale_y_discrete(limits = rev) +
+      scale_x_discrete(position = "top") +
+      scale_fill_manual(values = c("white",  "#244369", "#DB5079"),
+                        breaks = c(0,1,2)) +
+      theme_classic() +
+      theme(legend.position = "none",
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            axis.text.x = element_text(angle = 90, size = 7),
+            axis.text.x.top = element_text(vjust = 0.05, hjust = 0),
+            axis.text.y = element_text(size = 7)) +
+    geom_vline(xintercept = seq(1.5, length(unique(combo_df_keepbidirect$to)) - 0.5, 1), 
+             linetype = "solid", 
+             color = "gray50", 
+             size = 0.25) +
+    geom_hline(yintercept = seq(1.5, length(unique(combo_df_keepbidirect$from)) - 0.5, 1), 
+               linetype = "solid", 
+               color = "gray50", 
+               size = 0.25) 
+
+png(file.path(fig_out, "SI_bidirect.png"), width = 7.5, height = 10, unit = "in", res = 300)
+  plot  
+dev.off()
+
+
+# Number of bidirectional
+      combo_df_keepbidirect <- combo_df_keepbidirect %>% unique()
+      bidirect_total <- combo_df_keepbidirect %>%
+                  filter(relationship == 2) %>%
+                  summarise(count = n())
+      bidirect_difftheme <- combo_df_keepbidirect %>%
+                  filter(relationship == 2) %>%
+                  filter(from_theme != to_theme) %>%
+                  summarise(count = n())
+        
+      
+```
+
+$~$
+
+Combine matrices keeping lowest order connection for each pair.
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+# Replace all values in matrix 2 with 2, and matrix 3 with 3 (indicating the order of connection between each pair of variables instead of the number of pathways connecting them)
+  matrix2_combo[matrix2_combo > 0] <- 2
+  matrix3_combo[matrix3_combo > 0] <- 3
+  
+  matrix_combined_combo <- ifelse(combo_matrix == 1, combo_matrix, matrix2_combo) # keep 1's from matrix 1, otherwise use the values of matrix 2
+  matrix_combined_combo <- ifelse(matrix_combined_combo == 0, matrix3_combo, matrix_combined_combo) # now use the values from matrix 3 only if the combo matrix cell is 0 (no first or second order connection)
+
+# Reshape
+  matrix_combined_df_combo <- reshapetodf(matrix_combined_combo) %>%
+    mutate(from = as.factor(from))  %>%
+    mutate(to = str_replace_all(to, "Conservation of genetic resources  plants", "Conservation of genetic resources, plants")) %>%
+    mutate(to = str_replace_all(to, "Conservation of genetic resources  animals", "Conservation of genetic resources, animals"))  %>%
+    mutate(to = str_replace_all(to, "Minimum dietary diversity  women", "Minimum dietary diversity, women")) %>%
+    mutate(to = str_replace_all(to, "Minimum dietary diversity  child", "Minimum dietary diversity, child")) %>%
+    mutate(to = str_replace_all(to, "Ultra processed food sales", "Ultra-processed food sales"))
+
+# Bring back theme 
+  matrix_combined_df_combo <- left_join(matrix_combined_df_combo, rawdata[,c("from", "from_theme")], by = "from")
+  matrix_combined_df_combo <- left_join(matrix_combined_df_combo, rawdata[,c("to", "to_theme")], by = "to")
+  
+# Bring back variable order for from
+  matrix_combined_df_combo <- left_join(matrix_combined_df_combo, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+  matrix_combined_df_combo <- matrix_combined_df_combo %>% rename(from_order = indicator_order)
+
+# Replace identity cells as NA
+    matrix_combined_df_combo <-   matrix_combined_df_combo %>%
+      mutate(relationship = case_when(from == to ~ 0,
+                TRUE ~ relationship)) %>%
+      unique()
+
+# Plot
+    
+  plot <- matrix_combined_df_combo %>% 
+    # Create an ordering variable so X-axis is grouped by theme
+    group_by(from) %>%
+    mutate(var_order = seq_along(from)) %>%
+    ungroup() %>%
+    # Create an ordering variable for theme
+    mutate(theme_order = case_when(from_theme == "Diets, Nutrition, & Health" ~ 1,
+                                   from_theme == "Environment, Natural resources, & Production" ~ 2,
+                                   from_theme == "Livelihoods, Poverty, & Equity" ~ 3,
+                                   from_theme == "Governance" ~ 4,
+                                   from_theme == "Resilience" ~ 5)) %>%
+  ggplot(aes(y = fct_reorder(from, from_order), x = fct_reorder(to, var_order), fill = as.factor(relationship))) +
+    geom_tile() +
+    facet_col(vars(fct_reorder(from_theme,theme_order)), scales = "free_y", space = "free") +
+    scale_y_discrete(limits = rev) +
+    scale_x_discrete(position = "top") +
+    scale_fill_manual(values = c("gray80", "#2c7fb8","#9ecae1", "#deebf7"),
+                      labels = c("None (or indirect via 3 or more)", "Direct", "Indirect via 1 indicator", "Indirect via 2 indicators")) +
+    theme_classic() +
+    guides(fill = FALSE) +
+    theme(axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            axis.text.x = element_text(angle = 90, size = 7),
+            axis.text.x.top = element_text(vjust = 0.05, hjust = 0),
+            axis.text.y = element_text(size = 7),
+          plot.caption.position = "plot") +
+    geom_vline(xintercept = seq(1.5, length(unique(matrix_combined_df_combo$to)) - 0.5, 1), 
+             linetype = "solid", 
+             color = "gray50", 
+             size = 0.25) +
+    geom_hline(yintercept = seq(1.5, length(unique(combo_df_keepbidirect$from)) - 0.5, 1), 
+           linetype = "solid", 
+           color = "gray50", 
+           size = 0.25) 
+
+
+  
+  forlegend <- matrix_combined_df_combo %>% 
+    # Create an ordering variable so X-axis is grouped by theme
+    group_by(from) %>%
+    mutate(var_order = seq_along(from)) %>%
+    ungroup() %>%
+    # Create an ordering variable for theme
+    mutate(theme_order = case_when(from_theme == "Diets, Nutrition, & Health" ~ 1,
+                                   from_theme == "Environment, Natural resources, & Production" ~ 2,
+                                   from_theme == "Livelihoods, Poverty, & Equity" ~ 3,
+                                   from_theme == "Governance" ~ 4,
+                                   from_theme == "Resilience" ~ 5)) %>%
+  ggplot(aes(y = fct_reorder(from, from_order), x = fct_reorder(to, var_order), fill = as.factor(relationship))) +
+    geom_tile() +
+    facet_col(vars(fct_reorder(from_theme,theme_order)), scales = "free_y", space = "free") +
+    scale_y_discrete(limits = rev) +
+    scale_x_discrete(position = "top") +
+    scale_fill_manual(values = c("gray80", "#2c7fb8","#9ecae1", "#deebf7"),
+                      labels = c("None (or indirect via 3 or more)", "Direct", "Indirect via 1 indicator", "Indirect via 2 indicators")) +
+    theme_classic() +
+    theme(legend.position = "right",
+          legend.direction = "horizontal",
+          legend.key = element_rect(color="black"),
+          legend.text = element_text(size = 9),
+          legend.title = element_text(size = 10),
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            axis.text.x = element_text(angle = 90, size = 7),
+            axis.text.x.top = element_text(vjust = 0.05, hjust = 0),
+            axis.text.y = element_text(size = 7),
+          plot.caption.position = "plot") +
+    labs(fill = "Closest connection")
+  legend <- cowplot::get_legend(forlegend)
+  
+  # Add legend and save 
+  png(file.path(fig_out, "Fig3_Closest connection.png"), width = 7.5, height = 10, unit = "in", res = 300)
+    cowplot::plot_grid(plot, legend, nrow = 2, rel_heights = c(20,1), align = 'v')
+  dev.off()
+
+
+```
+  
+Now create a table of counts for the SI to measure network density
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+  sumdf <- matrix_combined_df_combo %>% 
+    # Create an ordering variable so X-axis is grouped by theme
+      group_by(from) %>%
+      mutate(var_order = seq_along(from)) %>%
+      ungroup() %>%
+    # Create an ordering variable for theme
+      mutate(theme_order = case_when(from_theme == "Diets, Nutrition, & Health" ~ 1,
+                                     from_theme == "Environment, Natural resources, & Production" ~ 2,
+                                     from_theme == "Livelihoods, Poverty, & Equity" ~ 3,
+                                     from_theme == "Governance" ~ 4,
+                                     from_theme == "Resilience" ~ 5)) 
+    # Now sum the connections
+      direct <- sumdf %>%
+        filter(relationship == 1) %>%
+        group_by(from) %>%
+        summarise(Direct = sum(relationship)) %>%
+        ungroup()
+      via1 <- sumdf %>%
+        filter(relationship == 2) %>%
+        mutate(relationship = 1) %>%
+        group_by(from) %>%
+        summarise("Indirect via 1" = sum(relationship))  %>%
+        ungroup()
+      via2 <- sumdf %>%
+        filter(relationship == 3) %>%
+        mutate(relationship = 1) %>%
+        group_by(from) %>%
+        summarise("Indirect via 2" = sum(relationship))  %>%
+        ungroup()
+      density <- direct %>%
+        mutate("Network density" = round((Direct / 49),2))
+        
+    # Join
+      sumdf <- sumdf %>%
+        select(from, from_theme, from_order, theme_order) %>%
+        unique()
+      sumdf <- left_join(sumdf, density, by = "from")
+      sumdf <- left_join(sumdf, via1, by = "from")
+      sumdf <- left_join(sumdf, via2, by = "from")
+      sumdf <- sumdf %>%
+        relocate(`Network density`, .after = `Indirect via 2`) %>%
+        mutate("Total connections" = rowSums(across(5:7), na.rm = TRUE)) %>%
+        mutate(`Percent direct` = round((Direct / `Total connections`) * 100, 0)) %>%
+        relocate(`Percent direct`, .after = `Total connections`) %>%
+        relocate(`Network density`, .after = `Percent direct`)
+
+# Create table
+  sumdf <- sumdf %>%
+    relocate(from_theme, .before = "from") %>%
+    rename(Theme = from_theme,
+           Indicator = from) %>%
+    select(-c(3:4)) %>%
+    arrange(-`Network density`)
+  sumdf[is.na(sumdf)] <- 0
+  flextable::flextable(sumdf) %>%
+    save_as_docx(path = file.path(fig_out, "Interactions Table.docx"))
+      
+```
+
+
+$~$
+
+Circular diagram of direct relationships
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+# Circular diagram
+# Use the long format and simplify column names
+  connect <- combo_df %>% 
+    rename(value = relationship) %>%
+    select(-c(from_theme)) %>%
+    filter(value !=0) # Keep only the connections (the edges in graph theory language)
+
+# Number of connections per indicator
+  connections <- c(as.character(connect$from), as.character(connect$to)) %>%
+    as.tibble() %>%
+    group_by(value) %>%
+    summarize(n=n()) 
+  colnames(connections) <- c("indicator", "n")
+
+# Create a table with the number of connections per indicator
+  connect_tbl <- connections %>%
+    arrange(desc(n))
+  colnames(connect_tbl) <- c("Indicator", "N connections")
+
+      SItable2 <- flextable::flextable(connect_tbl) %>% autofit() %>%
+      set_table_properties(layout = "autofit")
+        
+    # Save table
+      save_as_docx(SItable2, path = file.path(fig_out, "SI Table 2_Number of direct connections.docx"), orient = "landscape")
+
+
+# Reorder data set and make the graph
+  connections <- left_join(connections, rawdata_from, by = c("indicator"  = "from")) %>%
+    select(c(1:2, "from_theme")) %>%
+    rename(group = from_theme,
+           name = indicator) %>%
+    arrange(group) %>%
+    mutate(name = as.factor(name)) %>% unique()
+
+# keep only indicators in edges
+  connect <- connect %>%
+    filter(from %in% connections$name) %>%
+    filter(to %in% connections$name) 
+
+# Add label angle
+  number_of_bar=nrow(connections)
+  connections$id = seq(1, nrow(connections))
+  angle = 360 * (connections$id-0.5) /number_of_bar # Subtract 0.5 for letter positioning so that the angle of the label is at the center of the bars. Not extreme right (1) or extreme left (0)    
+  connections$hjust <- ifelse(angle > 90 & angle<270, 1, 0)
+  connections$angle <- ifelse(angle > 90 & angle<270, angle+180, angle)
+
+# Create a graph object with igraph
+  graph <- graph_from_data_frame(connect, vertices = connections, directed = TRUE)
+
+# Make the graph
+png(file.path(fig_out, "Interactions Circular - Combined.png"), width = 10, height = 7.5, unit = "in", res = 300)
+
+ggraph::ggraph(graph, layout="circle") + 
+  geom_edge_link(alpha=0.2, width=0.3) +
+  geom_node_point(aes(size=n, color=as.factor(group), fill=group), alpha=0.9) +
+  scale_size_continuous(range=c(0.5,8)) +
+  scale_color_manual(values=mycolor) +
+  geom_node_text(aes(label=paste("    ",name,"    "), 
+                     angle=angle, hjust=hjust), size=2.3, color="black") +
+  theme_void() +
+  guides(color = guide_legend(order = 1,
+                              title = "Theme",
+                              override.aes = list(size = 5)),
+         size = guide_legend(order = 1, title = "Number of direct connections \n(from and to, combined)"),
+         fill = FALSE) +
+  theme(legend.position="right",
+    plot.margin=unit(c(0,0,0,0), "null"),
+    panel.spacing=unit(c(0,0,0,0), "null"),
+    plot.caption.position = "plot") +
+  expand_limits(x = c(-1.5, 1.5), y = c(-1.7, 1.5)) 
+
+dev.off()
+
+```
+
+$~$
+
+Network diagram
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+# Create an igraph object from the matrix of first order connections
+  network <- igraph::graph_from_adjacency_matrix(combo_matrix)
+
+# Convert to a data frame to merge in attributes
+  network_df <- igraph::as_data_frame(network, 'both')
+
+# Add the theme as an attribute to the vertices
+  network_df$vertices <- network_df$vertices %>% 
+    left_join(rawdata_from, c('name' = 'from'))
+
+# Turn back into an igraph object
+  network2 <- graph_from_data_frame(network_df$edges,
+                        directed = TRUE,
+                        vertices = network_df$vertices)
+
+# plot it
+  png(file.path(fig_out, "Interactions Network - Combined.png"), width = 8.5, height = 8.5, unit = "in", res = 300)
+  igraph::plot.igraph(network2, edge.arrow.size = 0.2, layout = layout_with_fr,
+       vertex.size = 10, 
+       vertex.color = mycolor[as.numeric(as.factor(vertex_attr(network2, "from_theme")))], 
+       vertex.label.dist	= 0, 
+       vertex.label.cex	= .5,
+       vertex.label.color = "black") 
+  legend("topleft", 
+         cex = .8,
+         bty = "n",
+         legend = levels(rawdata_from$from_theme),
+         fill = mycolor, 
+         border=NA)
+  dev.off()
+  
+  igraph::plot.igraph(network2, edge.arrow.size = 0.2, layout = layout_with_fr,
+       vertex.size = 10, 
+       vertex.color = mycolor[as.numeric(as.factor(vertex_attr(network2, "from_theme")))], 
+       vertex.label.dist	= 0, 
+       vertex.label.cex	= .5,
+       vertex.label.color = "black") 
+  legend("topleft", 
+         cex = .5,
+         bty = "n",
+         legend = levels(rawdata_from$from_theme),
+         fill = mycolor, 
+         border=NA)
+
+```
+
+Circular diagram of direct relationships - connections FROM governance indicators.
+
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+# Limit to governance indicators in the from column
+  governance <- combo_df %>% filter(from_theme == "Governance")
+
+# Circular diagram
+# Use the long format and simplify column names
+  connect <- governance %>% 
+    rename(value = relationship) %>%
+    select(-c(from_theme)) %>%
+    filter(value !=0) # Keep only the connections (the edges in graph theory language)
+
+# Number of connections per indicator
+  connections <- c(as.character(connect$from), as.character(connect$to)) %>%
+    as.tibble() %>%
+    group_by(value) %>%
+    summarize(n=n()) 
+  colnames(connections) <- c("indicator", "n")
+
+# Reorder data set and make the graph
+  connections <- left_join(connections, rawdata_from, by = c("indicator"  = "from")) %>%
+    select(c(1:2, "from_theme")) %>%
+    rename(group = from_theme,
+           name = indicator) %>%
+    arrange(group) %>%
+    mutate(name = as.factor(name)) %>% unique()
+
+# keep only indicators in edges
+  connect <- connect %>%
+    filter(from %in% connections$name) %>%
+    filter(to %in% connections$name) 
+
+# Add label angle
+  number_of_bar=nrow(connections)
+  connections$id = seq(1, nrow(connections))
+  angle = 360 * (connections$id-0.5) /number_of_bar # Subtract 0.5 for letter positioning so that the angle of the label is at the center of the bars. Not extreme right (1) or extreme left (0)    
+  connections$hjust <- ifelse(angle > 90 & angle<270, 1, 0)
+  connections$angle <- ifelse(angle > 90 & angle<270, angle+180, angle)
+
+# Create a graph object with igraph
+  graph <- graph_from_data_frame(connect, vertices = connections, directed = TRUE)
+
+# Make the graph
+  png(file.path(fig_out, "Interactions Circular - Combined - FROM governance.png"), width = 10, height = 7.5, unit = "in", res = 300)
+
+  ggraph::ggraph(graph, layout="circle") + 
+    geom_edge_link(alpha=0.5, width=0.75) +
+    geom_node_point(aes(size=n, color=as.factor(group), fill=group), alpha=0.9) +
+    scale_size_continuous(range=c(0.5,8)) +
+    scale_color_manual(values=mycolor) +
+    geom_node_text(aes(label=paste("    ",name,"    "), 
+                       angle=angle, hjust=hjust), size=2.3, color="black") +
+    theme_void() +
+    guides(color = guide_legend(order = 1,
+                                title = "",
+                                override.aes = list(size = 5)),
+           size = FALSE,
+           fill = FALSE) +
+    theme(legend.position="right",
+      plot.margin=unit(c(0,0,0,0), "null"),
+      panel.spacing=unit(c(0,0,0,0), "null"),
+      plot.caption.position = "plot") +
+    labs(caption = "Node size denotes number of direct connections,only connected indicators shown.\nRelationship is directed (arrow obscured by node).") +
+    expand_limits(x = c(-2.6, 2.6), y = c(-2.6, 2.6)) +
+    ggtitle("Direct relationships from the governance indicators to all other indicators")
+  
+  dev.off()
+
+```
+
+Circular diagram of direct relationships - connections TO governance indicators.
+
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+# Limit to governance indicators in the to column
+  combo_df <- left_join(combo_df, rawdata[,3:4], by = "to")
+  governance <- combo_df %>% filter(to_theme == "Governance") %>%
+    select(-c(to_theme))
+
+# Circular diagram
+# Use the long format and simplify column names
+  connect <- governance %>% 
+    rename(value = relationship) %>%
+    select(-c(from_theme)) %>%
+    filter(value !=0) # Keep only the connections (the edges in graph theory language)
+
+# Number of connections per indicator
+  connections <- c(as.character(connect$from), as.character(connect$to)) %>%
+    as.tibble() %>%
+    group_by(value) %>%
+    summarize(n=n()) 
+  colnames(connections) <- c("indicator", "n")
+
+# Reorder data set and make the graph
+  connections <- left_join(connections, rawdata_from, by = c("indicator"  = "from")) %>%
+    select(c(1:2, "from_theme")) %>%
+    rename(group = from_theme,
+           name = indicator) %>%
+    arrange(group) %>%
+    mutate(name = as.factor(name)) %>% unique()
+
+# keep only indicators in edges
+  connect <- connect %>%
+    filter(from %in% connections$name) %>%
+    filter(to %in% connections$name) 
+
+# Add label angle
+  number_of_bar=nrow(connections)
+  connections$id = seq(1, nrow(connections))
+  angle = 360 * (connections$id-0.5) /number_of_bar # Subtract 0.5 for letter positioning so that the angle of the label is at the center of the bars. Not extreme right (1) or extreme left (0)    
+  connections$hjust <- ifelse(angle > 90 & angle<270, 1, 0)
+  connections$angle <- ifelse(angle > 90 & angle<270, angle+180, angle)
+
+# Create a graph object with igraph
+  graph <- graph_from_data_frame(connect, vertices = connections, directed = TRUE)
+
+# Make the graph
+  png(file.path(fig_out, "Interactions Circular - Combined - TO governance.png"), width = 10, height = 7.5, unit = "in", res = 300)
+
+  ggraph::ggraph(graph, layout="circle") + 
+    geom_edge_link(alpha=0.5, width=0.75) +
+    geom_node_point(aes(size=n, color=as.factor(group), fill=group), alpha=0.9) +
+    scale_size_continuous(range=c(0.5,8)) +
+    scale_color_manual(values=mycolor) +
+    geom_node_text(aes(label=paste("    ",name,"    "), 
+                       angle=angle, hjust=hjust), size=2.3, color="black") +
+    theme_void() +
+    guides(color = guide_legend(order = 1,
+                                title = "",
+                                override.aes = list(size = 5)),
+           size = FALSE,
+           fill = FALSE) +
+    theme(legend.position="right",
+      plot.margin=unit(c(0,0,0,0), "null"),
+      panel.spacing=unit(c(0,0,0,0), "null"),
+      plot.caption.position = "plot") +
+    labs(caption = "Node size denotes number of direct connections,only connected indicators shown.\nRelationship is directed (arrow obscured by node).") +
+    expand_limits(x = c(-2.6, 2.6), y = c(-2.6, 2.6)) +
+    ggtitle("Direct relationships to the governance indicators from all other indicators")
+  
+  dev.off()
+
+```
