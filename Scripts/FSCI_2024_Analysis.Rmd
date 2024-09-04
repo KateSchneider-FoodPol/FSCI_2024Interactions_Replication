@@ -91,19 +91,14 @@ This script contains all analysis tables and figures for the 2024 FSCI paper.
 # Supplementary data file 2:
 FSCI_2024 <- readRDS(file = file.path(data_out, "FSCI_2024.rds"))
 
-# Supplementary data file 3:
-Interactions <- readRDS(file = file.path(data_out, "Interactions_ExpertElicit_LowestConnect.rds"))
-
-# Supplementary data file 4:
+# Additional data files for replication:
+# Expert elicitation of global interactions results (datasets here are all based on the primary direct connections dataset, listed first, but then include the lowest connection, the direct connections shaped as a matrix (required for certain visualizations), and a dataset that preserves the information about bidirectional relationships identified)
 Interactions_Direct <- readRDS(file = file.path(data_out, "Interactions_ExpertElicit_Direct.rds"))
-
-# Supplementary data file 5:
+Interactions <- readRDS(file = file.path(data_out, "Interactions_ExpertElicit_LowestConnect.rds"))
 Interactions_Direct_Matrix <- readRDS(file = file.path(data_out, "Interactions_ExpertElicit_DirectMatrix.rds"))
-
-# Supplementary data file 6:
 Interactions_Bidirect <- readRDS(file = file.path(data_out, "Interactions_ExpertElicit_Bidirect.rds"))
 
-# Supplementary data file 7:
+# Literature search dataset:
 search_results <- readxl::read_excel(path = file.path(data_out, "Search results_screened.xlsx"))
 ```
 
@@ -955,9 +950,7 @@ $~$
 # Set up the data
     oneyear <- c("Functional integrity",
                  "Fisheries health index")
-    surveyindicators <- c("All 5 food groups", "Child labor", "Female landholdings", "Minimum dietary diversity, child", 
-                              "Minimum dietary diversity, women", "NCD-Protect", "NCD-Risk", "Reduced coping strategies", 
-                              "Social protection adequacy", "Social protection coverage", "Soft drink consumption", "Zero fruits or vegetables, adult", "Zero fruits or vegetables, child")
+    surveyindicators <- c("All 5 food groups", "Child labor", "Female landholdings", "Minimum dietary diversity, child", "Minimum dietary diversity, women", "NCD-Protect", "NCD-Risk", "Reduced coping strategies", "Social protection adequacy", "Social protection coverage", "Soft drink consumption", "Zero fruits or vegetables, adult", "Zero fruits or vegetables, child")
   
   # Set up data
     data <- FSCI_2024 %>%
