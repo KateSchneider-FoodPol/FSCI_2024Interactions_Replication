@@ -955,9 +955,7 @@ $~$
 # Set up the data
     oneyear <- c("Functional integrity",
                  "Fisheries health index")
-    surveyindicators <- c("All 5 food groups", "Child labor", "Female landholdings", "Minimum dietary diversity, child", 
-                              "Minimum dietary diversity, women", "NCD-Protect", "NCD-Risk", "Reduced coping strategies", 
-                              "Social protection adequacy", "Social protection coverage", "Soft drink consumption", "Zero fruits or vegetables, adult", "Zero fruits or vegetables, child")
+    surveyindicators <- c("All 5 food groups", "Child labor", "Female landholdings", "Minimum dietary diversity, child", "Minimum dietary diversity, women", "NCD-Protect", "NCD-Risk", "Reduced coping strategies", "Social protection adequacy", "Social protection coverage", "Soft drink consumption", "Zero fruits or vegetables, adult", "Zero fruits or vegetables, child")
   
   # Set up data
     data <- FSCI_2024 %>%
