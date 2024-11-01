@@ -1,0 +1,410 @@
+---
+title: "FSCI 2024 - Data Management"
+author: "Kate Schneider"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+### *Overall Objectives*
+
+This script imports and shapes the data from global expert elicitation of interactions between pairs of indicators.
+3. Carries out automated literature search for pairs of identified interactions involving at least one governance indicator. The final literature results data set was manually screened for literature in English and relevant to food systems. 
+
+# *Setup and Housekeeping*
+```{r setup, warning = FALSE, messages = FALSE, results = "hide", echo = TRUE}
+### Setup required to knit this script into a markdown document
+    
+### Load packages
+    # R studio should prompt the installation of any packages not loaded on the instance where this script has been opened
+    
+    # Data management and multipurpose packages
+    library(knitr)
+    library(readxl)
+    library(stringr)
+    library(tidyverse)
+
+### File management
+  
+    # Set the root folder to the project root so that all file paths are relative to the main project folder
+    knitr::opts_knit$set('./')
+    
+    # Set relative directory paths
+      data_in <- here::here("Input Data")
+      data_out <- here::here("Output Data")
+      figtab_out <- here::here("Figures & Tables")
+
+### Set preferred options
+    
+    # Set the treatment of numbers to numerical (avoids scientific notation from showing in results)
+    options(scipen = 999)
+  
+    # Set echo = FALSE for all code chunks will prevent the code from printing in the output file as the default setting (set to TRUE where relevant)
+    knitr::opts_chunk$set(echo = FALSE)
+
+### Functions
+    
+    # Create a "not in" operator
+    `%notin%` <- Negate(`%in%`) 
+    
+```
+# *Import and shape the global expert elicitation results*
+
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+# Import the matrix completed by expert elicitation
+  rawdata_all <- readxl::read_xlsx(file.path(data_in,"Interaction_scoring_sheet_All Groups_2024_March.xlsx"), sheet = "Sheet 1 - interaction_scoring_s")
+  labels <- readxl::read_xlsx(file.path(data_in,"Interaction_scoring_sheet_All Groups_2024_March.xlsx"), sheet = "Indicator names and labels")
+
+# Start with the first direction of relationship (Column E)
+  rawdata <- rawdata_all %>%
+    select(c(1:2,4:5)) %>%
+    # Label the columns
+    rename(theme = 1,
+           indicator = 2,
+           dependent = 3,
+           relationship = 4) %>%
+    # Now remove the rows of header information and empty end rows
+    filter(row_number() %notin% 1,
+           row_number() %notin% 2452:2458) %>%
+    # Factor the indicator names and themes, make the relationship numeric
+    mutate(theme = as.factor(theme),
+           indicator = as.factor(indicator),
+           dependent = as.factor(dependent),
+           relationship = as.numeric(relationship)) %>%
+    # Replace NA with 0 (no relationship)
+    mutate(relationship = case_when(is.na(relationship) ~ 0,
+                                    TRUE ~ relationship))
+
+# Merge in the short labels for the indicators for figures
+  rawdata <- left_join(rawdata, labels, by = "indicator") %>%
+    rename(from = short_label,
+           from_theme = theme.y) %>%
+    select(-c(indicator_order))
+  rawdata <- left_join(rawdata, labels, by = c("dependent" = "indicator")) %>%
+    rename(to = short_label,
+           to_theme = theme) %>%
+    select(-c(theme.x, indicator, dependent, indicator_order)) %>%
+    relocate(relationship, .after = to_theme) %>%
+    mutate(to = as.factor(to),
+           from = as.factor(from),
+           from_theme = as.factor(from_theme),
+           to_theme = as.factor(to_theme))
+
+# Remove the theme columns
+  raw_wide <- rawdata %>%
+    select(-c(contains("theme"))) %>%
+    # Pivot wide
+    pivot_wider(names_from = to, 
+                values_from = relationship, 
+                values_fill = 0) %>%
+    relocate("Cost of healthy diet", .after = from)
+  
+# Confirm indicators are in the correct order
+  raw_wide <- left_join(raw_wide, labels, by = c("from" = "short_label")) %>%
+    select(-c(indicator, theme))
+  raw_wide <- raw_wide[order(raw_wide$indicator_order), ]
+  raw_wide <- raw_wide %>%
+    select(-c(indicator_order)) %>%
+    relocate(`Social capital index`, .before = `Mobile phones per 100 people`)
+
+
+# Convert to a matrix
+# Remove the first column because matrices can only have one class of data
+  matrix1 <- as.matrix(raw_wide[, -1]) # eliminate rownames column to get numerical matrix
+
+# Add back the row names
+  rownames(matrix1) <- raw_wide$from # assign rownames
+
+# Square and cube the matrix
+  matrix2 <- matrix1 %*% matrix1
+  matrix3 <- matrix1 %*% matrix1 %*% matrix1
+
+# Reshape the second and third order connections into long data frames
+# Create a function to reshape matrix to data frame
+  reshapetodf <- function(input_matrix) {
+    input <- data.frame(input_matrix) 
+    input$from <- row.names(input)   
+    input <- input %>%
+      pivot_longer(1:50, names_to = "to", values_to = "relationship") %>%
+      mutate(to = stringr::str_replace_all(to, "\\.", " "),        
+             to = stringr::str_replace_all(to, "   ", " "),
+             to = case_when(to == "NCD Protect" ~ "NCD-Protect",
+                            to == "NCD Risk" ~ "NCD-Risk",
+                            TRUE ~ to)) 
+    return(input)
+  }
+
+# Execute the function on the matrices
+  df_order2 <- reshapetodf(matrix2)
+  df_order3 <- reshapetodf(matrix3)
+
+# Add from theme to the long second and third order connections
+  rawdata_from <- rawdata %>% select(c("from", "from_theme")) %>% unique()
+  df_order2 <- left_join(df_order2, rawdata_from, by = "from") 
+  df_order3 <- left_join(df_order3, rawdata_from, by = "from") 
+
+# Add indicator order for from variable
+  rawdata <- left_join(rawdata, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    rawdata <- rawdata %>% rename(from_order = indicator_order)
+  df_order2 <- left_join(df_order2, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    df_order2 <- df_order2 %>% rename(from_order = indicator_order)
+  df_order3 <- left_join(df_order3, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    df_order3 <- df_order3 %>% rename(from_order = indicator_order)
+
+```
+
+$~$
+
+Repeat for the relationships identified in the other direction (Column F)
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+# Load data and clean
+  rawdata2 <- rawdata_all %>%
+    select(c(1:2,4,6)) %>%
+    # Label the columns
+    rename(theme = 1,
+           dependent = 2,
+           indicator = 3,
+           relationship = 4) %>%
+    # Fix the open budget index name in the dependent column
+    mutate(dependent = case_when(dependent == "Open Budget Index" ~ "Open Budget Index Score",
+                                 TRUE ~ dependent)) %>%
+    # Now remove the rows of header information and empty end rows
+    filter(row_number() %notin% 1,
+           row_number() %notin% 2452:2458) %>%
+    # Factor the indicator names and themes, make the relationship numeric
+    mutate(theme = as.factor(theme),
+           indicator = as.factor(indicator),
+           dependent = as.factor(dependent),
+           relationship = as.numeric(relationship)) %>%
+    # Replace NA with 0 (no relationship)
+    mutate(relationship = case_when(is.na(relationship) ~ 0,
+                                    TRUE ~ relationship))
+
+# Merge in the short labels for the indicators for figures
+  rawdata2 <- left_join(rawdata2, labels, by = "indicator") %>%
+    rename(from = short_label,
+           from_theme = theme.y) %>%
+    select(-c(indicator_order))
+  rawdata2 <- left_join(rawdata2, labels, by = c("dependent" = "indicator")) %>%
+    rename(to = short_label,
+           to_theme = theme) %>%
+    select(-c(1:3)) %>%
+    relocate(relationship, .after = to_theme) %>%
+    select(-c(indicator_order))
+  
+  # Remove the theme columns
+  raw_wide2 <- rawdata2 %>%
+    select(-c(contains("theme"))) %>%
+    # Pivot wide
+    pivot_wider(names_from = to, 
+                values_from = relationship, 
+                values_fill = 0) %>%
+    relocate("Cost of healthy diet", .after = from) %>%
+    filter(!(is.na(from)))
+  
+# Confirm indicators are in the correct order
+  raw_wide2 <- left_join(raw_wide2, labels, by = c("from" = "short_label")) %>%
+    select(-c(indicator, theme))
+  raw_wide2 <- raw_wide2[order(raw_wide2$indicator_order), ]
+  raw_wide2 <- raw_wide2 %>%
+    select(-c(indicator_order)) %>%
+    relocate(`Social capital index`, .before = `Mobile phones per 100 people`)
+
+# Convert to matrix
+  matrix1_v2 <- as.matrix(raw_wide2[, -1]) # eliminate rownames column to get numerical matrix
+
+# Add back the row names
+  rownames(matrix1_v2) <- raw_wide2$from # assign rownames
+
+# Square and cube the matrix
+  matrix2_v2 <- matrix1_v2 %*% matrix1_v2
+  matrix3_v2 <- matrix1_v2 %*% matrix1_v2 %*% matrix1_v2
+
+# Reshape the second and third order connections into long data frames
+# Add from theme to the long second and third order connections
+  rawdata_from2 <- rawdata2 %>% select(c("from", "from_theme")) %>% unique %>%
+    filter(!(is.na(from))) %>%
+    collapse::roworderv(neworder = 50)
+
+  df_order2_v2 <- reshapetodf(matrix2_v2) 
+  df_order3_v2 <- reshapetodf(matrix3_v2) 
+
+# Add from theme to the long second and third order connections
+  rawdata_from_v2 <- rawdata2 %>% select(c("from", "from_theme")) %>% unique() %>%
+    filter(!(is.na(from)))
+  df_order2_v2 <- left_join(df_order2_v2, rawdata_from, by = "from") 
+  df_order3_v2 <- left_join(df_order3_v2, rawdata_from, by = "from") 
+  
+# Add indicator order variable for the from variable
+  rawdata2 <- left_join(rawdata2, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    rawdata2 <- rawdata2 %>% rename(from_order = indicator_order)
+  df_order2_v2 <- left_join(df_order2_v2, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    df_order2_v2 <- df_order2_v2 %>% rename(from_order = indicator_order)
+  df_order3_v2 <- left_join(df_order3_v2, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    df_order3_v2 <- df_order3_v2 %>% rename(from_order = indicator_order)
+
+```
+
+Create a new data frame that merges column E and F information, ensuring all relationships identified are included, and preserving the directionality of the relationships.  
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+
+# Create combined matrix by adding matrix 1 (column E) to matrix1_v2 (column F)
+
+# Add the matrix elements together into a new matrix
+  combo_matrix_keepbidirect <- matrix1 + matrix1_v2
+
+# Now any cells with causality in both directions have a value of 2 - replace with 1
+  combo_matrix <- combo_matrix_keepbidirect
+  combo_matrix[combo_matrix==2] <- 1
+
+# Reshape to data frame, fixing indicator names that lose punctuation in the matrix conversion
+  combo_df <- reshapetodf(combo_matrix) %>%
+    mutate(to = str_replace_all(to, "Conservation of genetic resources  plants", "Conservation of genetic resources, plants")) %>%
+    mutate(to = str_replace_all(to, "Conservation of genetic resources  animals", "Conservation of genetic resources, animals")) %>%
+    mutate(to = str_replace_all(to, "Minimum dietary diversity  women", "Minimum dietary diversity, women")) %>%
+    mutate(to = str_replace_all(to, "Minimum dietary diversity  child", "Minimum dietary diversity, child")) %>%
+    mutate(to = str_replace_all(to, "Ultra processed food sales", "Ultra-processed food sales"))
+  
+  combo_df_keepbidirect <- reshapetodf(combo_matrix_keepbidirect)  %>%
+    mutate(to = str_replace_all(to, "Conservation of genetic resources  plants", "Conservation of genetic resources, plants")) %>%
+    mutate(to = str_replace_all(to, "Conservation of genetic resources  animals", "Conservation of genetic resources, animals"))  %>%
+    mutate(to = str_replace_all(to, "Minimum dietary diversity  women", "Minimum dietary diversity, women")) %>%
+    mutate(to = str_replace_all(to, "Minimum dietary diversity  child", "Minimum dietary diversity, child")) %>%
+    mutate(to = str_replace_all(to, "Ultra processed food sales", "Ultra-processed food sales"))
+
+# Add from theme 
+  combo_df <- left_join(combo_df, rawdata_from, by = "from") 
+  combo_df_keepbidirect <- left_join(combo_df_keepbidirect, rawdata_from, by = "from") 
+
+# Square and cube the matrix
+  matrix2_combo <- combo_matrix %*% combo_matrix
+  matrix3_combo <- combo_matrix %*% combo_matrix %*% combo_matrix
+
+# Reshape matrices to data frame
+  df_order2_combo <- reshapetodf(matrix2_combo) 
+  df_order3_combo <- reshapetodf(matrix3_combo) 
+
+# Add from theme to the long second and third order connections
+  df_order2_combo <- left_join(df_order2_combo, rawdata_from, by = "from")
+  df_order3_combo <- left_join(df_order3_combo, rawdata_from, by = "from") 
+  
+# Add indicator order variable for the from variable
+  combo_df <- left_join(combo_df, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    combo_df <- combo_df %>% rename(from_order = indicator_order)
+  combo_df_keepbidirect <- left_join(combo_df_keepbidirect, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    combo_df_keepbidirect <- combo_df_keepbidirect %>% rename(from_order = indicator_order)
+  df_order2_combo <- left_join(df_order2_combo, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    df_order2_combo <- df_order2_combo %>% rename(from_order = indicator_order)
+  df_order3_combo <- left_join(df_order3_combo, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    df_order3_combo <- df_order3_combo %>% rename(from_order = indicator_order)
+    
+# Clean up
+  rm(raw_wide, raw_wide2)
+  
+# Bring back theme 
+  combo_df_keepbidirect <- left_join(combo_df_keepbidirect, rawdata[,c("to", "to_theme")], by = "to") %>% unique()
+
+```
+
+$~$
+
+Combine matrices keeping lowest order connection for each pair.
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+  # Replace all values in matrix 2 with 2, and matrix 3 with 3 (indicating the order of connection between each pair of variables instead of the number of pathways connecting them)
+    matrix2_combo[matrix2_combo > 0] <- 2
+    matrix3_combo[matrix3_combo > 0] <- 3
+  
+    matrix_combined_combo <- ifelse(combo_matrix == 1, combo_matrix, matrix2_combo) # keep 1's from matrix 1, otherwise use the values of matrix 2
+    matrix_combined_combo <- ifelse(matrix_combined_combo == 0, matrix3_combo, matrix_combined_combo) # now use the values from matrix 3 only if the combo matrix cell is 0 (no first or second order connection)
+  
+  # Reshape
+    matrix_combined_df_combo <- reshapetodf(matrix_combined_combo) %>%
+      mutate(from = as.factor(from))  %>%
+      mutate(to = str_replace_all(to, "Conservation of genetic resources  plants", "Conservation of genetic resources, plants")) %>%
+      mutate(to = str_replace_all(to, "Conservation of genetic resources  animals", "Conservation of genetic resources, animals"))  %>%
+      mutate(to = str_replace_all(to, "Minimum dietary diversity  women", "Minimum dietary diversity, women")) %>%
+      mutate(to = str_replace_all(to, "Minimum dietary diversity  child", "Minimum dietary diversity, child")) %>%
+      mutate(to = str_replace_all(to, "Ultra processed food sales", "Ultra-processed food sales"))
+  
+  # Bring back theme 
+    matrix_combined_df_combo <- left_join(matrix_combined_df_combo, rawdata[,c("from", "from_theme")], by = "from") %>% unique()
+    matrix_combined_df_combo <- left_join(matrix_combined_df_combo, rawdata[,c("to", "to_theme")], by = "to") %>% unique()
+    
+  # Bring back variable order for from
+    matrix_combined_df_combo <- left_join(matrix_combined_df_combo, labels[,c("short_label", "indicator_order")], by = c("from" = "short_label"))
+    matrix_combined_df_combo <- matrix_combined_df_combo %>% rename(from_order = indicator_order)
+
+```
+
+$~$
+
+Save the datasets
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+# Rename data frames for interpretability and subsequent analysis
+    Interactions_ExpertElicit_Direct <- combo_df
+    Interactions_ExpertElicit_DirectMatrix <- combo_matrix
+    Interactions_ExpertElicit_AdjacencyMatrix <- matrix_combined_df_combo
+    Interactions_ExpertElicit_Bidirect <- combo_df_keepbidirect
+
+# Save data sets in format needed for network diagrams
+    save(Interactions_ExpertElicit_Direct, Interactions_ExpertElicit_DirectMatrix,
+         Interactions_ExpertElicit_AdjacencyMatrix, Interactions_ExpertElicit_Bidirect,
+         file = file.path(data_out, "Interactions_ExpertElicititation.RData"))
+    
+# Clean up
+    rm(df_order2, df_order2_combo, df_order2_v2, df_order3, df_order3_combo, df_order3_v2, duplicate_pairs, matrix_combined_combo, matrix1, matrix1_v2, matrix2, matrix2_v2, matrix2_combo, matrix3, matrix3_combo, matrix3_v2, rawdata, rawdata_all, rawdata_from, rawdata_from2, rawdata_from_v2, combo_matrix_keepbidirect, rawdata2, combo_df, combo_matrix, matrix_combined_df_combo, combo_df_keepbidirect)
+    
+
+```
+
+Now export the combined matrix pairs into the literature search analysis as they will form the basis of the first step in the search (naive search).
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+
+# Develop a data frame of the indicator pairs
+  indicatorpairs <- Interactions_ExpertElicit_AdjacencyMatrix %>%
+    filter(relationship == 1) %>%
+    filter(from != to) %>% ## Remove identity 
+    filter(from_theme == "Governance" | to_theme == "Governance") %>%
+    select(from, to)
+
+# Now remove duplicate pairings (regardless of their order in to or from columns)
+# function(x) is defining a function that sorts the elements of each row of the data frame data, and then concatenates them into a single string with "-" as the separator. This is done for each row of the data frame using apply, resulting in a vector of sorted pairs of "from" and "to" values for each row.
+  sorted_pairs <- apply(indicatorpairs, 1, function(x) paste(sort(x), collapse = " AND "))
+    
+# Create a boolean column that marks the second occurence of a pair as a duplicate
+  duplicate_pairs <- as.data.frame(duplicated(sorted_pairs) | duplicated(sorted_pairs, fromLast = TRUE))
+  duplicate_pairs <- duplicate_pairs %>%
+    rename(duplicate = 1)
+  
+# Add in the duplication information to the sorted pairs
+  searchterms <- cbind(sorted_pairs, duplicate_pairs) %>%
+    # Drop the duplicate rows
+    filter(duplicate != TRUE) %>%
+    # Rename 
+    rename(naive_search = 1) %>%
+    select(-c(duplicate))
+
+# Now split back up into multiple columns
+   searchterms <- searchterms %>%
+     tidyr::separate(naive_search, c("concept 1", "concept 2"), sep = " AND ")
+    
+  # Manually revise some search terms
+    # Create a find and replace function:
+    findreplace <- function(x, y, data) {
+      for (i in seq_along(x)) {
+        data <- mutate(data, across(everything(), ~ gsub(x[i], y[i], .x)))
+      }
+      return(data)
+    }
+   
+    changefrom <- c("NCD-Protect", "NCD-Risk", "Food system pathway", "All 5 food groups")
+    changeto <- c("dietary protection from non-communicable disease", "dietary risk of non-communicable disease", "food system transformation pathway", "consuming all essential food groups")
+    searchterms <- findreplace(changefrom, changeto, searchterms) 
+    searchterms <- searchterms %>% mutate(across(everything(), tolower))
+    changefrom <- c("milan", "gdp")
+    changeto <- c("Milan", "GDP")
+    searchterms <- findreplace(changefrom, changeto, searchterms) 
+    
+# Save to the literature search folder as .csv
+    writexl::write_xlsx(searchterms, path = file.path(data_in, "Search terms.xlsx"), col_names = TRUE)
+   
+```

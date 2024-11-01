@@ -1,0 +1,842 @@
+---
+title: "FSCI 2024 - API pull archiving"
+author: "Kate Schneider"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+### *Overall Objectives*
+
+This script pulls and archives all raw data that is drawn from APIs to archive the version used for the manuscript.
+
+# *Setup and Housekeeping*
+```{r setup, warning = FALSE, messages = FALSE, results = "hide", echo = TRUE}
+### Setup required to knit this script into a markdown document
+    
+### Load packages
+    # R studio should prompt the installation of any packages not loaded on the instance where this script has been opened
+    
+    # Data management and multipurpose packages
+    library(httr)
+    library(jsonlite)
+    library(knitr)
+    library(readxl)
+    library(stringr)
+    library(tidyverse)
+    library(remotes)
+    library(devtools)
+
+    # Specific indicator packages
+    library(Rilostat)
+    library(vdemdata) # Install from GitHub: remotes::install_github("vdeminstitute/vdemdata")
+
+    # Spatial data packages
+    library(exactextractr)
+    library(geodata)
+    library(sf)
+    library(terra)
+    library(osmdata)
+    library(s2)
+    library(Rcpp)
+
+### File management
+  
+    # Set the root folder to the project root so that all file paths are relative to the main project folder
+    knitr::opts_knit$set('./')
+    
+    # Set relative directory paths
+      data_in <- here::here("Input Data")
+      data_out <- here::here("Output Data")
+      figtab_out <- here::here("Figures & Tables")
+
+### Set preferred options
+    
+    # Set the treatment of numbers to numerical (avoids scientific notation from showing in results)
+    options(scipen = 999)
+  
+    # Set echo = FALSE for all code chunks will prevent the code from printing in the output file as the default setting (set to TRUE where relevant)
+    knitr::opts_chunk$set(echo = FALSE)
+
+### Functions
+    
+    # Create a "not in" operator
+    `%notin%` <- Negate(`%in%`) 
+    
+    # Get data functions
+    # Get data from FAO API and extract into data frame - JSON format
+    getdata_fao <- function(x) {
+      url = paste0(path, x, options)
+      res = httr::GET(url)
+      data = jsonlite::fromJSON(rawToChar(res$content))
+      data = data[["data"]]
+      return(data)
+      Sys.sleep(1)  # Add a 1-second delay between requests to avoid overloading the API
+    }
+      
+    # Modify getdata function to download and read in excel and csv files
+    getdata2 <- function(x) {
+        url = paste0(path, x, options)
+        destfile <- tempfile ()
+        download.file (url, destfile, mode = 'wb')
+        res = readxl::read_excel(destfile)
+    }
+    getdata3 <- function(x) {
+        url = paste0(path, x, options)
+        destfile <- tempfile ()
+        download.file (url, destfile, mode = 'wb')
+        res = read.csv(destfile, header = TRUE)
+    }
+
+    # Get data function for the configuration of the SDGs API
+    getdata_sdg <-function(x){
+            url = paste0(path, x, options)
+      datcall <- jsonlite::fromJSON(url)
+    
+      indicator<-as.data.frame(datcall$data)
+    
+      return(indicator)
+    }
+        
+    # Get WB data
+    getwbdata <- function(x) {
+    wb_data <- wbstats::wb(country = "all",
+                     indicator = x,
+                     startdate = 2000,
+                     enddate = 2023,
+                     removeNA = FALSE)
+    }
+
+```
+
+### Get data from APIs and R package pulls
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+
+###############################################
+#   FAOSTAT                                   #
+###############################################
+
+### Get all the data from FAOSTAT API:
+    # We break the APIs into 3 components, the path and the options are constant for every indicator query
+    # The queries are specific to the indicator
+      path <- "https://faostatservices.fao.org/api/v1/en/data/"    
+      queries <- c("CAHD?area=_1&area_cs=M49&element=6120&item=7004&year=_1",
+                  "FBS?area=_1&area_cs=M49&element=645&item=2918&year=_1",
+                  "FBS?area=_1&area_cs=M49&element=645&item=2919&year=_1",
+                  "FS?area=_1&area_cs=M49&element=6120&item=21009&year3=_1",
+                  "FS?area=_1&area_cs=M49&element=6120&item=21004&year3=_1",
+                  "CAHD?area=_1&area_cs=M49&element=6120&item=7005&year=_1",
+                  "EI?area=_1&area_cs=M49&element=7176&item=867&year=_1",
+                  "EI?area=_1&area_cs=M49&element=7176&item=1718&year=_1",
+                  "EI?area=_1&area_cs=M49&element=7176&item=882&year=_1",
+                  "EI?area=_1&area_cs=M49&element=7176&item=27&year=_1",
+                  "EI?area=_1&area_cs=M49&element=2510&item=1718&year=_1",
+                  "EI?area=_1&area_cs=M49&element=2510&item=27&year=_1",
+                  "EI?area=_1&area_cs=M49&element=2510&item=867&year=_1",
+                  "EI?area=_1&area_cs=M49&element=2510&item=882&year=_1",
+                  "QCL?area=_1&area_cs=M49&element=2413&item=867&year=_1",
+                  "QCL?area=_1&area_cs=M49&element=2413&item=1717&year=_1",
+                  "QCL?area=_1&area_cs=M49&element=2413&item=1738&year=_1",
+                  "QCL?area=_1&area_cs=M49&element=2413&item=1735&year=_1",
+                  "QCL?area=_1&area_cs=M49&element=2413&item=882&year=_1",
+                  "MK?area=_1&area_cs=M49&element=6103&item=22016&year=_1",
+                  "FS?area=_1&area_cs=M49&element=6120&item=21031&year3=_1",
+                  "ESB?area=_1&area_cs=M49&element=7290&item=5081&year=_1",
+                  "RP?area=_1&area_cs=M49&element=5159&item=1357&year=_1",
+                  "RL?area=_1&area_cs=M49&element=5110&item=6610&year=_1", 
+                  "RL?area=_1&area_cs=M49&element=5110&item=6620&year=_1", 
+                  "RL?area=_1&area_cs=M49&element=5110&item=6600&year=_1",
+                  "QCL?area=_1&area_cs=M49&element=2312&item=1717&year=_1",
+                  "QCL?area=_1&area_cs=M49&element=2312&item=1738&year=_1",
+                  "QCL?area=_1&area_cs=M49&element=2312&item=1735&year=_1",
+                  "QCL?area=_1&area_cs=M49&element=2313&item=1806&year=_1",
+                  "QCL?area=_1&area_cs=M49&element=2313&item=1780&year=_1")
+      # Separate query for GHG emissions because it has 8 columns  
+      queries_8cols <- c("GT?area=_1&area_cs=M49&element=723113&item=6518&year=_1&source=3050")
+      
+      # Rest of API strings (constant over queries):  
+      options <- "&show_codes=true&show_unit=true&show_flags=false&show_notes=false&null_values=false&datasource=PRODUCTION_AWS"
+      
+    # Run the function over list of queries, separating by the returned number of columns
+      result <- lapply(queries, FUN = getdata_fao)
+      result_8cols <- lapply(queries_8cols, FUN = getdata_fao)
+        
+    # Bind rows
+      fao_data <- do.call(rbind, result)
+      data2 <- do.call(rbind, result_8cols) %>%
+        select(-c(Source, "Source Code"))
+      fao_data <- rbind(fao_data, data2)
+      
+    # Pull the food price index separately because the data are monthly
+      path <- "https://faostatservices.fao.org/api/v1/en/data/"    
+      queries <- c("CP?area=_1&area_cs=M49&element=6120&item=23013&year=_1&month=_1")
+      options <- "&show_codes=true&show_unit=true&show_flags=false&show_notes=false&null_values=false&datasource=PRODUCTION_AWS"
+
+    # Get the data
+    result_fpi <- lapply(queries, FUN = getdata_fao)
+
+      
+###############################################
+#   SDG (UNStats)                             #
+###############################################
+    
+### Get data from SDG API:
+    path = c("https://unstats.un.org/sdgs/UNSDGAPIV5/v1/sdg/Indicator/Data?")    
+    queries = c("indicator=5.a.1&dimensions=%5B%7Bname%3A%22Sex%22%2Cvalues%3A%5B%22FEMALE%22%5D%7D%5D",
+                "indicator=16.10.2",
+                "indicator=2.5.1&indicator=series%3DER_GRF_ANIMKPT",
+                "indicator=2.5.1&indicator=series%3DER_GRF_PLNTSTOR",
+                "indicator=6.1.1&location=ALLAREA")
+    options = c("&areaCode=_1&pageSize=20000")
+    result_sdg <- lapply(queries, FUN = getdata_sdg)
+  
+###############################################
+#   Global diet quality project               #
+###############################################
+
+### Get data from Global diet quality project API
+    path = c("http://dietquality.org/api/indicators/")
+    queries = c("mdd-w", "all-5", "ncd-protect", "ncd-risk", "zero-vegetable-or-fruit-consumption", "soft-drinks-soda-energy-drinks-sports-drinks")
+    options = c("/csv")
+    result = lapply(queries, FUN = getdata3)
+    gdq_data <- do.call(rbind, result)
+
+    
+###############################################
+#   UNICEF                                    #
+###############################################
+
+### Get data from UNICEF API:
+    path <- "https://sdmx.data.unicef.org/ws/public/sdmxapi/rest/data/UNICEF,"
+    queries = c("NUTRITION,1.0/.NT_CF_MDD._T.M6T23._T._T._T._T",
+                "NUTRITION,1.0/.NT_CF_ZEROFV._T.M6T23._T._T._T._T",
+                "PT,1.0/.PT_CHLD_5-17_LBR_ECON-HC._T.Y5T17._T._T._T._T")
+    options <- "?format=sdmx-csv&labels=both"
+    result_unicef <- lapply(queries, FUN = getdata3)
+      
+
+###############################################
+#   International Budget Partnership          #
+###############################################
+          
+### Get data from Open Budget Survey links to datasets (need to download every year of historical data separately and append them):
+    url <- "https://internationalbudget.org/sites/default/files/2024-05/ibp_full_data_time_series.xlsx"
+    destfile <- tempfile ()
+    download.file (url, destfile, mode = 'wb')
+    result_ibp <- readxl::read_excel(destfile)
+  
+
+###############################################
+#   ILOSTAT                                   #
+###############################################
+        
+### Get data from ILOSTAT R package:
+    # fetch indicator definitions on ILOSTAT
+      toc <- get_ilostat_toc(segment = getOption("ilostat_segment", "indicator"),
+                              lang = getOption("ilostat_lang", "en"),
+                              search = getOption("ilostat_search", "none"),
+                              filters = getOption("ilostat_filter", "none"),
+                              fixed = getOption("ilostat_fixed", TRUE))
+                                          
+    # Get data  
+      unemployment <- Rilostat::get_ilostat("UNE_DEAP_SEX_GEO_RT_A")
+      underemployment <- Rilostat::get_ilostat("TRU_DEMP_SEX_AGE_GEO_RT_A")
+   
+# Clean up   
+  rm(toc)
+      
+###############################################
+#   Varieties of Democracy                    #
+###############################################
+
+### Get data from Varieties of Democracy R package
+    vdem_codebook <- vdemdata::codebook
+    variables <- c("v2x_accountability", "v2x_cspart")
+    vdem_data <- vdemdata::vdem
+
+###############################################
+#   World Bank                                #
+###############################################
+  
+### Get World Bank indicators from wbstats package
+    wbindicators <- as.data.frame(wbstats::wbindicators())
+    queries = c("GE.EST",
+            "NY.GDP.MKTP.CD",
+            "SP.POP.TOTL",
+            "per_allsp.adq_pop_tot",
+            "per_allsp.cov_pop_tot",
+            "IT.CEL.SETS.P2",
+            "PA.NUS.PRVT.PP")
+    result <- lapply(queries, FUN = getwbdata)
+    wb_data <- do.call(rbind, result)
+    
+rm(wbindicators, result_8cols)
+
+save(fao_data, result_fpi, result_sdg, gdq_data, result_unicef, result_ibp,
+     unemployment, underemployment, 
+     vdem_data, wb_data,
+     file = file.path(data_in, "archived_data_pulls.RData"))
+
+    
+```
+
+### Get spatial data from GADM and Landscan and create the population datasets for countries, urban areas, and municipalities signed onto the Milan Urban Food Policy Pact
+
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+
+# Make sure S2 is turned on
+  sf::sf_use_s2(TRUE)
+
+# Calculate urban & total pop for all countries with signatories cities ####
+  # Import list of cities and create data frame of cities and a data frame to identify changes (for hard coding city extracts below)
+    # 2021 list
+      mufpp_cities_2021 <- readxl::read_excel(file.path(data_in, "MUFPP city data_2021.xlsx")) %>%
+        as.data.frame()
+      mufpp_cities_2021 <- mufpp_cities_2021[ ,2:1]
+    
+    # 2024 list
+      mufpp_cities <- readxl::read_excel(file.path(data_in, "MUFPP city data_2024.xlsx")) %>%
+        as.data.frame()
+      mufpp_cities <- mufpp_cities[ ,2:1]
+      names(mufpp_cities) <- c("country", "city")
+      mufpp_cities <- mufpp_cities[order(mufpp_cities$country, mufpp_cities$city), ]
+    
+    # Identify changes in signatory cities 
+      previous <- paste(mufpp_cities_2021$city, mufpp_cities_2021$country, sep = ", ") %>% as.data.frame()
+      updated <- paste(mufpp_cities$city, mufpp_cities$country, sep = ", ") %>% as.data.frame()
+      names(previous) <- "city"
+      names(updated) <- "city"
+    
+    # Identify changes to list cities to add and delete from analysis
+      cities_to_delete <- previous %>% anti_join(updated) %>% as.data.frame() # Cities to delete
+      cities_to_add <- updated %>% anti_join(previous) %>% as.data.frame() # Cities to add
+      # Check there are no differences:
+      nrow(cities_to_add) - nrow(cities_to_delete) == nrow(cities_to_add) - nrow(cities_to_delete) 
+      # Clean up
+      rm(previous, updated, mufpp_cities_2021)
+
+  # Data management - Fix country names to match across city list and GADM boundary data
+    # Modify country names to match geodata::gadm() as needed
+      gadm_ntry_names <- geodata::country_codes()$NAME %>% as.data.frame()
+      mufpp_cntry_names <- unique(mufpp_cities$country) %>% as.data.frame()
+      names(gadm_ntry_names) <- "country"
+      names(mufpp_cntry_names) <- "country"
+    
+    # Code to identify the mismatched spellings:
+    # mufpp_cntry_names %>% anti_join(gadm_ntry_names)
+    # gadm_ntry_names %>% anti_join(mufpp_cntry_names)
+    # Clean up
+      rm(gadm_ntry_names, mufpp_cntry_names)
+    
+    # Make changes for mismatched spellings:
+      mufpp_cities$country <- gsub("Ivory Coast", "Côte d'Ivoire", mufpp_cities$country)
+      mufpp_cities$country <- gsub("Republic of Congo", "Congo", mufpp_cities$country)
+      mufpp_cities$country <- gsub("Türkiye", "Turkey", mufpp_cities$country)
+      mufpp_cities$country <- gsub("Cape Verde", "Cabo Verde", mufpp_cities$country)
+    
+    # Unique country names list to avoid duplicate extracts per country
+      mufpp_cities <- mufpp_cities[order(mufpp_cities$country), ]
+      mufpp_countries <- mufpp_cities$country %>% table() %>% as.data.frame()
+      names(mufpp_countries) <- c("country", "city_counts")
+      mufpp_countries$city_counts %>% sum()
+
+# Download the boundaries for every country with an MUFPP signatory city
+  # This step creates a spatial vector collection which is a stack (boundaries and ISO code) 
+    country_adm0s <- do.call("svc", lapply(mufpp_countries$country, 
+                                         function(x) geodata::gadm(country=x, 
+                                                                   level=0, 
+                                                                   version="latest", 
+                                                                   path=tempdir())))
+
+# Crop, mask & create list of SpatRasters for each country from the Landscan global data
+    # This creates a spatial raster collection from the spatial vector collection
+    # And the data are the population counts within the spatial boundaries
+    # Load Landscan data
+    lsg_world_22 <- terra::rast(file.path(data_in, "landscan-global-2022.tif"))
+  
+    # Now extract the country raster
+      i <- 1
+      country_SpatRasters <- vector()
+      while(i <= length(country_adm0s)){
+        cntry_crp <- terra::crop(lsg_world_22, country_adm0s[[i]])
+        cntry_msk <- terra::mask(cntry_crp, country_adm0s[[i]])
+        country_SpatRasters <- c(country_SpatRasters, cntry_msk)
+        i <- i + 1
+      }
+
+    # Use SpatRasters to calculate urban and total populations for each country
+      # Turn off S2 for this step as it causes the loop to break for certain countries
+        sf::sf_use_s2(FALSE)
+        
+      # Now run the loop over all countries
+        i <- 1
+        countries_urban_pop <- vector()
+        countries_total_pop <- vector()
+        while(i <= length(country_adm0s)) {
+          density_polys <- terra::as.polygons(country_SpatRasters[[i]] > 200) %>% 
+            sf::st_as_sf() #200 represents urban density threshold
+          density_polys <- density_polys$geometry %>% sf::st_cast("POLYGON") %>% sf::st_as_sf()
+          # Check if valid
+          sf::st_is_valid(density_polys)
+          density_polys <- density_polys %>% mutate(area = as.numeric(sf::st_area(density_polys)))
+          density_polys <- density_polys %>% filter(area < max(density_polys$area) - 1)
+          density_polys$pops <- exactextractr::exact_extract(country_SpatRasters[[i]], density_polys, fun = 'sum')
+          cntry_urbpop <- sum(density_polys$pops)
+          countries_urban_pop <- c(countries_urban_pop, cntry_urbpop)
+          cntry_totpop <- global(country_SpatRasters[[i]], sum, na.rm = TRUE)[1, ]
+          countries_total_pop <- c(countries_total_pop,cntry_totpop)
+          i <- i + 1
+        }
+        # Clean up
+          rm(country_adm0s, cntry_crp, cntry_msk, country_SpatRasters, 
+             density_polys, cntry_totpop, cntry_urbpop, i)
+      
+        # Turn S2 back on
+          sf::sf_use_s2(TRUE)
+      
+    # Assemble MUFPP values into data frame
+      country_populations <- data.frame(country = mufpp_countries$country,
+                                        pop_u = countries_urban_pop,
+                                        totalpop_landscan = countries_total_pop)
+    # Clean up
+      rm(countries_total_pop, countries_urban_pop)
+
+# Now load the GADM data, which is used to extract the city boundaries
+  # Note that this is the only raw data file not included in the Github repository
+      # because it is too large. It must be downloaded from the GADM website
+      # https://gadm.org/download_world.html
+      # Select the geopackage of six separate layers
+      
+  # Create vector for different admin level polygons
+    adm0 <- vect(file.path(data_in, "gadm_410-levels.gpkg"), layer = "ADM_0")
+    adm1 <- vect(file.path(data_in, "gadm_410-levels.gpkg"), layer = "ADM_1")
+    adm2 <- vect(file.path(data_in, "gadm_410-levels.gpkg"), layer = "ADM_2")
+    adm3 <- vect(file.path(data_in, "gadm_410-levels.gpkg"), layer = "ADM_3")
+    adm4 <- vect(file.path(data_in, "gadm_410-levels.gpkg"), layer = "ADM_4")
+    adm5 <- vect(file.path(data_in, "gadm_410-levels.gpkg"), layer = "ADM_5")
+
+  # First for all new cities, we have to identify the ADM level and the correct name spelling 
+  # City extracts are hard coded below because:
+    # The administrative level where the city boundaries are located in the GADM data differs depending on the country and city
+    # Some cities have names found in many countries so country must be specified. 
+    # Some cities require aggregating multiple units from the GADM data
+    # Some cities are not in GADM and have to use Open Street Map (OSM) instead
+  
+  # This commented out code provides examples for investigation to make sure the cities are pulling correct polygons
+    # These print in the console
+    # Look for name spelling and special characters and look for duplicate names at multiple levels
+        # adm1[which(adm1$COUNTRY == "Uruguay"), ]$NAME_1 %>% sort()
+        # adm1[which(adm1$COUNTRY == "Turkey"), ] |> as.data.frame() |> View()
+        # adm1[which(adm1$NAME_1 == "Praia"), ]
+        # adm2[which(adm2$COUNTRY == "Uruguay"), ]$NAME_2 %>% sort()
+        # adm2[which(adm2$COUNTRY == "Turkey"), ] |> as.data.frame() |> View()
+        # adm2[which(adm2$NAME_2 == "Araraquara"), ]
+        # adm2[which(adm2$NAME_2 == "Halifax" & adm2$COUNTRY == "Canada"), ]
+        # adm3[which(adm3$COUNTRY == "Venezuela"), ]$NAME_3 %>% sort()
+        # adm3[which(adm3$NAME_3 == "Lucca"), ]
+        # adm4[which(adm4$COUNTRY == "Uganda"), ]$NAME_4 %>% sort()
+        # adm4[which(adm4$NAME_4 == "Balikpapan"), ]
+        # adm5[which(adm5$COUNTRY == "Indonesia"), ]$NAME_5 %>% sort()
+        # adm0[grep("*Santa Fe", adm0$COUNTRY), ]$COUNTRY
+        # adm1[grep("*Habana", adm1$NAME_1), ]$NAME_1
+        # adm2[grep("*Habana", adm2$NAME_2), ]$NAME_2
+        # adm3[grep("*Rourkela", adm3$NAME_3), ]$NAME_3
+        # adm4[grep("*London", adm4$NAME_4), ]$NAME_4
+        # adm5[grep("*Bamako", adm5$NAME_5), ]$NAME_5
+
+# Now extract the MUFPP Cities' spatial boundaries
+  # Each annual update, you have to remove here any cities in the cities_to_delete dataframe
+  # Note the spellings are different from the mufpp_cities and must match GADM data to be selected correctly
+  # These city extracts are memory intensive. Garbage collection ('gc()') helps reduce memory load
+    # It will run as coded here with 128GB RAM 
+      # If you have less, garbage collection will be needed more frequently
+      # Some lines may not run under a certain RAM threshold
+      mufpp_cities_vect <- adm3[which(adm3$NAME_3 == "Tiranë"), ] 
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Alger"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Luanda"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Buenos Aires"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Córdoba" & adm1$COUNTRY == "Argentina"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Esteban Echeverría"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Godoy Cruz"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Rió Grande"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Rosario" & adm2$COUNTRY == "Argentina"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "San Antonio de Areco"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_1 == "Santa Fe" & adm2$NAME_2 == "La Capital"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Tandil"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Melbourne"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Sydney"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Wien"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Brugge"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Bruxelles"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Gent"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Leuven"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Liège"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Namur"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Oostende"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "La Paz" & adm1$COUNTRY == "Bolivia"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Sucre" & adm3$COUNTRY == "Bolivia"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Araraquara"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Belo Horizonte"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Campinas"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Curitiba"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Maricá"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Osasco"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Porto Alegre"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Recife"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Rio de Janeiro"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Salvador" & adm2$COUNTRY == "Brazil"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "São Paulo"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Bobo-Dioulasso"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Ouagadougou"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Praia"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Bafoussam 1"), ] %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Bafoussam 2"), ]) %>%
+                               terra::union(adm3[which(adm3$NAME_3 == "Bafoussam 3"), ]) %>% aggregate())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Bamenda 1"), ] %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Bamenda 2"), ]) %>%
+                               terra::union(adm3[which(adm3$NAME_3 == "Bamenda 3"), ]) %>% aggregate())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Douala 1"), ] %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Douala 2"), ]) %>%
+                               terra::union(adm3[which(adm3$NAME_3 == "Douala 3"), ]) %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Douala 4"), ]) %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Douala 5"), ]) %>% aggregate())
+     mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Ebolowa 1"), ] %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Ebolowa 2"), ]) %>% aggregate())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Guelph"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Halifax" & adm2$COUNTRY == "Canada"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Communauté-Urbaine-de-Montréal"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Toronto"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Vancouver"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "N'Djamena"), ][1] %>%
+                               terra::union(adm2[which(adm2$NAME_2 == "N'Djamena"), ][2]) %>% aggregate())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Santiago Metropolitan" & adm1$COUNTRY == "Chile"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Beijing"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Chongqing"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Guangzhou"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Shanghai"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Bogotá D.C."), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Manizales"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Medellin"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Santiago de Cali"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Brazzaville"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Santa Ana" & adm2$COUNTRY == "Costa Rica"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Abidjan"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Zagreb"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Ciudad de la Habana"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "København"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Kolding"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Chone"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Portoviejo"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Quito"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "San Salvador" & adm1$COUNTRY == "El Salvador"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Addis Abeba"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Bordeaux"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Dijon"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Grenoble"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Le Havre"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Lyon"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Marseille"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Montpellier" & adm3$COUNTRY == "France"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Montreuil"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm5[which(adm5$NAME_5 == "Mouans-Sartoux"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Nantes" & adm3$COUNTRY == "France"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Paris"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Rennes"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Strasbourg"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Banjul"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Berlin"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Bremerhaven"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Köln"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Frankfurt am Main"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Accra", format_out = "sf_polygon", featuretype = "city", silent = FALSE) %>% vect())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Tamale"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Athens" & adm3$COUNTRY == "Greece"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Thessaloniki"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Guatemala"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Tegucigalpa", format_out = "sf_polygon", featuretype = "city", silent = FALSE) %>% vect())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Budapesti"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Bhopal"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Chandigarh"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Indore"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Jabalpur"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Jammu"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Panaji"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Pune"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Rajkot"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Rourkela", format_out = "sf_polygon", featuretype = "city", silent = FALSE) %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Sagar" & adm3$NAME_1 == "Madhya Pradesh"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Surat"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Tumkur"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Ujjain"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Balikpapan"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Bandung"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Banjar Baru"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Bogor"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Bontang"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Denpasar"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Gorontalo"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Makassar"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Pekanbaru"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Semarang"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Sukabumi"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Surakarta"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Tarakan"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Dublin"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Herzliya", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[1,] %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Tel Aviv"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Ancona"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Andria"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Aosta"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Bari" & adm3$COUNTRY == "Italy"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Bergamo"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Bologna"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Cagliari"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Capannori"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Castel Del Giudice"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Cremona" & adm3$COUNTRY == "Italy"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Florence" & adm2$COUNTRY == "Italy"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Foggia"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Genova"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Lecco"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Livorno" & adm3$COUNTRY == "Italy"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Lucca"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Milano"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Modena"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Molfetta"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Palermo"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Parma"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Lucca"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Roma" & adm3$COUNTRY == "Italy"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Trento"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Torino"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Udine"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Venezia"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Vicenza"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Kyoto"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Osaka"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Tokyo" & adm1$COUNTRY == "Japan"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Amman"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Salt"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Nur-Sultan", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[[2]][1,] %>% vect()) # Astana
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Kisumu"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Nairobi"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Biškek"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Riga"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Antananarivo"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Seberang Perai Selatan"), ] %>% 
+                               terra::union(adm2[which(adm2$NAME_2 == "Seberang Perai Tengah"), ]) %>%
+                               terra::union(adm2[which(adm2$NAME_2 == "Seberang Perai Utara"), ]) %>% aggregate())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Bamako"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Nouakchott"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Guadalajara" & adm2$COUNTRY == "México"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Mérida"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Distrito Federal" & adm1$COUNTRY == "México"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Pachuca de Soto"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Chişinău"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Ulaanbaatar"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Chimoio", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[1,] %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Maputo 1"), ] %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Maputo 2"), ]) %>%
+                               terra::union(adm3[which(adm3$NAME_3 == "Maputo 3"), ]) %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Maputo 4"), ]) %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Maputo 5"), ]) %>% aggregate())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Pemba Cidade" & adm3$COUNTRY == "Mozambique"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Cidade De Quelimane" & adm3$COUNTRY == "Mozambique"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Windhoek", format_out = "sf_polygon", featuretype = "city", silent = FALSE) %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Almere"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Amsterdam"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Ede"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Groningen" & adm2$COUNTRY == "Netherlands"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Rotterdam"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "The Hague", format_out = "sf_polygon", featuretype = "city", silent = FALSE) %>% vect() %>% aggregate())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Utrecht"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Wellington" & adm2$COUNTRY == "New Zealand"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Agadez", format_out = "sf_polygon", featuretype = "city", silent = FALSE) %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Gaya" & adm3$COUNTRY == "Niger"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Niamey", format_out = "sf_polygon", featuretype = "city", silent = FALSE) %>% vect())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Bethlehem"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Jericho"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Lima" & adm2$COUNTRY == "Peru"), ] %>% 
+                               terra::union(adm2[which(adm2$NAME_2 == "Callao" & adm2$COUNTRY == "Peru"), ]) %>% aggregate())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Quezon City"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Warszawa"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Wrocław"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Funchal (Santa Luzia)"), ] %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Funchal (São Pedro)"), ]) %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Funchal (Sé)"), ]) %>% aggregate())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Lisboa"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Torres Vedras (Santa Maria Do Ca"), ] %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Torres Vedras (São Pedro E São T"), ]) %>% aggregate())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Brasov"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Bucharest"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Cheboksary"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Kazan", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[[2]]  %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Moscow City"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Nizhny Novgorod", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[[2]] %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Samara", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[2,] |> vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Dakar"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Freetown1"), ] %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Freetown2"), ]) %>%
+                               terra::union(adm3[which(adm3$NAME_3 == "Freetown3"), ]) %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Freetown4"), ]) %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Freetown5"), ]) %>% aggregate())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Ljubljana"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Mogadisho"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "City of Cape Town"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Ethekwini"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "City of Johannesburg"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Daegu"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Hwaseong"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Jangseong"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Naju"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Seoul"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Wanju"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Yeosu"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Barcelona"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Bilbao"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Cádiz"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Córdoba"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Dénia"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Donostia-San Sebastián"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Fuenlabrada"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Granollers"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Madrid"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Málaga"), ][2])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Rivas-Vaciamadrid"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Valencia"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Valladolid"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Vitoria-Gasteiz"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm4[which(adm4$NAME_4 == "Zaragoza"), ][1])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Colombo" & adm2$COUNTRY == "Sri Lanka"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Basel" & adm3$COUNTRY == "Switzerland"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Genève"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Lausanne"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Zürich"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Arusha"), ] %>% 
+                               terra::union(adm2[which(adm2$NAME_2 == "Arusha Urban"), ]) %>% aggregate())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Bangkok Metropolis"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Chiang Mai"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Carthage"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Tunis"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Efeler", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[2, ] %>% vect() %>% aggregate())
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Mezitli", format_out = "sf_polygon", featuretype = "city", silent = FALSE) %>% vect() %>% aggregate())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Nilüfer"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Istanbul"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Mbale"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Abu Dhabi"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Dubai"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Birmingham"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Brighton and Hove"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Bristol" & adm3$COUNTRY == "United Kingdom"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Glasgow"), ])
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm3[which(adm3$NAME_3 == "Bolton" & adm3$COUNTRY == "United Kingdom"), ] %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Bury" & adm3$COUNTRY == "United Kingdom"), ]) %>%
+                               terra::union(adm3[which(adm3$NAME_3 == "Manchester" & adm3$COUNTRY == "United Kingdom"), ]) %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Oldham" & adm3$COUNTRY == "United Kingdom"), ]) %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Rochdale" & adm3$COUNTRY == "United Kingdom"), ]) %>% 
+                               terra::union(adm3[which(adm3$NAME_3 == "Salford" & adm3$COUNTRY == "United Kingdom"), ]) %>%
+                               terra::union(adm3[which(adm3$NAME_3 == "Stockport" & adm3$COUNTRY == "United Kingdom"), ]) %>%
+                               terra::union(adm3[which(adm3$NAME_3 == "Tameside" & adm3$COUNTRY == "United Kingdom"), ]) %>%
+                               terra::union(adm3[which(adm3$NAME_3 == "Trafford" & adm3$COUNTRY == "United Kingdom"), ]) %>%
+                               terra::union(adm3[which(adm3$NAME_3 == "Wigan" & adm3$COUNTRY == "United Kingdom"), ]) %>% aggregate())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Greater London", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[1,] %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Austin", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[[2]][1,] %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Baltimore", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[1,] %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Boston", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[1,] %>% vect())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Chicago", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[1,] %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Hamilton" & adm2$NAME_1 == "Ohio"), ]) #Cincinnati
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Columbus, Ohio", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[1,] %>% vect())
+        x <- getbb(place_name = "Los Angeles", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[[1]] %>% 
+          st_cast("POLYGON") %>% 
+          st_cast("LINESTRING") %>% 
+          st_cast("POLYGON")
+      mufpp_cities_vect <- c(mufpp_cities_vect, x[1, ] %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Miami", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[[1]][1,] %>% vect())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Minneapolis", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[[1]] %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "New Haven", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[1,] %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "New Port Richey", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[[2]] %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "New York", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[[2]][1,] %>% vect())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Pittsburgh", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[1,] %>% vect())
+        x <- getbb(place_name = "San Francisco", format_out = "sf_polygon", featuretype = "city", silent = FALSE)[[2]] %>% 
+          st_cast("POLYGON") %>% 
+          st_cast("LINESTRING") %>% 
+          st_cast("POLYGON")
+      mufpp_cities_vect <- c(mufpp_cities_vect, x[2, ] %>% vect())
+gc()
+      mufpp_cities_vect <- c(mufpp_cities_vect, getbb(place_name = "Washington DC", format_out = "sf_polygon", featuretype = "city", silent = FALSE) %>% vect())
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm1[which(adm1$NAME_1 == "Montevideo"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Ezequiel Zomora"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Kitwe"), ])
+      mufpp_cities_vect <- c(mufpp_cities_vect, adm2[which(adm2$NAME_2 == "Lusaka"), ])
+gc()
+
+  # Extract population totals per city  
+    lsg_world_22 <- terra::rast(file.path(data_in, "landscan-global-2022.tif"))
+    i <- 1
+    all_pops <- vector()
+    while(i <= length(mufpp_cities_vect)){
+      pops <- terra::extract(lsg_world_22, mufpp_cities_vect[[i]], fun = 'sum', na.rm = TRUE)[1,2]
+      all_pops <- c(all_pops, pops)
+      i <- i + 1
+    }
+    
+  # Assemble values into data frame
+    # For this to be accurate, the cities list has to be in the same order as the vectors that are put into all_pops
+      city_populations <- data.frame(cities = mufpp_cities,
+                                     city_pop = all_pops)
+      all_pops <- data.frame(city_pop = all_pops)
+    # Add in the total and urban populations
+      mufpp_2023 <- left_join(city_populations, country_populations, by = c("cities.country" = "country"))
+      save(mufpp_2023, file = file.path(data_in, "mufpp_2023_archive.RData"))
+      
+# Clean up
+  rm(adm0, adm1, adm2, adm3, adm4, adm5, all_pops, cities_to_add, cities_to_delete, city_populations, country_populations, lsg_world_22, mufpp_cities, mufpp_cities_vect, mufpp_countries, x, pops, see, i, destfile, newnames, options, path, queries, token)
+```

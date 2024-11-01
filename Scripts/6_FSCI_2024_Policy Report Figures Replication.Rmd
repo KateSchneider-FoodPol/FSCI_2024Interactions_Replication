@@ -1,0 +1,410 @@
+---
+title: "FSCI 2024 Policy report figures"
+author: "Kate Schneider"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+### *Overall Objectives*
+This script contains all figures for the 2024 FSCI policy report.
+
+```{r setup, warning = FALSE, messages = FALSE, results = "hide", echo = TRUE}
+### Setup required to knit this script into a markdown document
+    
+### Load packages
+    # R studio should prompt the installation of any packages not loaded on the instance where this script has been opened
+    
+    # Data management and multipurpose packages
+    library(data.table)
+    library(kableExtra)
+    library(knitr)
+    library(stringr)
+    library(tidyverse)
+    library(here)
+
+    # Data visualization packages
+    library(tmap)
+    library(sf)
+    library(rnaturalearth)
+    library(grid)
+    library(cowplot)
+    library(flextable)
+    library(ggforce)
+    library(igraph)
+    library(ggraph)
+
+### File management
+  
+    # Set the root folder to the project root so that all file paths are relative to the main project folder
+    knitr::opts_knit$set('./')
+    
+    # Set relative directory paths
+    data_out <- here::here("Output Data")
+    figtab_out <- here::here("Figures & Tables/Policy Report Figures")
+
+### Set preferred options
+    
+    # Set the treatment of numbers to numerical (avoids scientific notation from showing in results)
+    options(scipen = 999)
+  
+    # Set echo = FALSE for all code chunks will prevent the code from printing in the output file as the default setting (set to TRUE where relevant)
+    knitr::opts_chunk$set(echo = FALSE)
+
+### Functions
+    
+    # Create a "not in" operator
+    `%notin%` <- Negate(`%in%`) 
+    
+### Color palettes
+    themes_colors <- c("#21908dff", "#3b518bff", "#97a4b2", "#fde725ff", "#5cc863ff")
+    categories <- c("#97ebdb", "#0086ad", "#005582", "gray80")
+    income_colors <- c("Low income" = "#97a4b2", 
+                      "Lower middle income"  = "#41B6C4", 
+                      "Upper middle income" = "#1D91C0", 
+                      "High income" = "#0C2C84",
+                      "Global mean" = "gray25")
+    region_colors <- c("Central Asia" = "#CC6677FF",
+                      "Eastern Asia" = "#332288FF",                  
+                      "Latin America & Caribbean" = "#DDCC77FF",     
+                      "Northern Africa & Western Asia" = "#117733FF", 
+                      "Northern America and Europe" = "#88CCEEFF",    
+                      "Oceania" = "#882255FF",
+                      "South-eastern Asia" =  "#44AA99FF",            
+                      "Southern Asia" = "#999933FF",                  
+                      "Sub-Saharan Africa" = "#AA4499FF",
+                       "Global mean" = "gray25")
+
+    
+### Organization
+    col_order <- c("country", "M49_code", "ISO3", "indicator", 
+           "year", "value", "unit")
+    row_order <- c("country", "year", "variable_order")
+```
+
+#### Load data files
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+# Supplementary data file 1: "Supplementary Data 1 - Metadata and Codebook.xlsx"
+
+# Supplementary data file 2:
+FSCI_2024 <- readRDS(file = file.path(data_out, "FSCI_2024.rds"))
+
+# Expert elicitation:
+load(file = file.path(data_out, "Interactions_ExpertElicititation.RData"))
+
+```
+
+$~$
+
+#### Quoted results in text
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+phones <- FSCI_2024 %>%
+  filter(short_label == "Mobile phones per 100 people") %>%
+  filter(year == 2000 | year == 2022) %>%
+  select(c(4,5,40)) %>%
+  unique()
+
+print(phones)
+
+```
+
+#### Figure 1: Regional data over time for selected indicators
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+# Set up the data
+    selectedindicators <- c("Access to safe water", "Mobile phones per 100 people", "Fruit availability", "Vegetable availability", "Yield, beef", "Yield, cereals", "Yield, fruit", "Yield, milk", "Yield, vegetables", "Nitrogen use efficiency",  "Emissions intensity, beef", "Milan urban food policy pact", "Conservation of genetic resources, animals", "Conservation of genetic resources, plants", "Food supply variability", "Experience food insecurity", "Cost of healthy diet", "Food price volatility", "Pesticide use", "Civil society participation", "Rural unemployment", "Government accountability index")
+  
+  # Set up data
+    data <- FSCI_2024 %>%
+      # keep selected indicators
+      filter(short_label %in% selectedindicators) %>%
+      select(c(desirable_direction, year, short_label, indicator_order, 
+               regionmean, FSCI_region, incomegrpmean, income_group, 
+               globalmean, theme)) %>% 
+      unique() %>%
+      arrange(indicator_order, year) %>%
+      mutate(year = as.factor(year)) %>%
+      rename('Global mean' = globalmean) %>%
+      filter(!(is.na(regionmean))) %>%
+      ungroup() 
+
+    data$short_label <- factor(data$short_label)
+    data <- droplevels(data)
+    
+  # Order themes
+  data$theme <- ordered(data$theme, levels = c("Diets, Nutrition, and Health", "Environment, natural resources, and production", "Livelihoods, Poverty, and Equity", "Governance", "Resilience"))
+
+  # Regional means data
+    regions <- data %>%
+      select(-c("income_group", "incomegrpmean")) %>%
+      unique() %>%
+      filter(!(is.na(FSCI_region))) %>%
+      pivot_wider(names_from = FSCI_region, values_from = regionmean) %>%
+      arrange(indicator_order) %>%
+      relocate('Global mean', .after = 'Central Asia') %>%
+      pivot_longer(6:15, names_to = "group", values_to = "value")
+    regions <- droplevels(regions)
+    regions$group <- factor(regions$group)
+
+# Plot function
+    plotlines <- function(data, x, colors) {
+        p <- data %>% 
+          filter(short_label == x) %>%
+          arrange(indicator_order, year) %>%
+          ggplot(aes(x = year, y = value, group = group)) +
+          geom_point(aes(color = group)) + 
+          geom_line(aes(color = group), size = 0.5) + 
+          scale_color_manual(values = colors) +
+          guides(color = FALSE) +
+          theme_classic() +
+          theme(axis.title.x = element_blank(),
+                axis.title.y = element_blank(),
+                axis.text.x = element_text(size = 5, angle = 45),
+                plot.title = element_text(size = 6)) +
+          labs(title = stringr::str_wrap(x, width = 34))
+      print(p)
+    }
+    
+# Run for all indicators   
+  ordered_indicators <- fct_reorder(data$short_label, data$indicator_order)
+  indicators <- as.list(levels(ordered_indicators))
+  plots <-lapply(indicators, function(x) plotlines(regions, x, region_colors))  
+
+# Set up a figure for the legend
+  forlegend <- function(data, x, colors) {
+        p <- data %>% 
+          filter(short_label == x) %>%
+          arrange(indicator_order, year) %>%
+          ggplot(aes(x = year, y = value, group = group)) +
+          geom_point(aes(color = group)) + 
+          geom_line(aes(color = group), size = 0.5) + 
+          scale_color_manual(values = colors) +
+          guides(color = guide_legend(nrow=2)) +
+          theme_classic() +
+          theme(axis.title.x = element_blank(),
+                axis.title.y = element_blank(),
+                axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+                plot.title = element_text(size = 8),
+                legend.text = element_text(size=8),
+                legend.title.align = 0,
+                legend.position = "right", 
+                legend.justification = "left",
+                legend.direction = "horizontal",
+                legend.title = element_blank()) +
+          ggtitle(x) 
+      print(p)
+  }
+  for_legend <- lapply(indicators, function(x) forlegend(regions, x, region_colors))
+  legend <- get_legend(for_legend[[1]])
+  
+  # Combine the figures per indicator into a single plot per theme
+    p1 <- cowplot::plot_grid(plotlist = plots, ncol = 4, align = 'v')
+    png(file.path(figtab_out, "Figure 1.png"), width = 7.5, height = 10, unit = "in", res = 300)
+        cowplot::plot_grid(p1,legend, nrow = 2, rel_heights = c(18,1), align = "hv")
+    dev.off()
+
+
+```
+
+
+$~$
+
+#### Figure 2. Map of food environment policies
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+  # Filter data to visualize
+    data <- FSCI_2024 %>% 
+      filter(indicator == "Presence of national health-related food environment policies" &
+               year == 2023) %>%
+      rename(iso_a3_eh = ISO3) %>% # to match map country identifier
+      select(c(iso_a3_eh, value)) %>%
+      mutate(value = case_when(value == "economic" ~ "Economic",
+                               value == "regulatory" ~ "Mandatory regulations",
+                               value == "both" ~ "Both", 
+                               value == "none" ~ "None"),
+             value = factor(value, levels = c("Economic", "Mandatory regulations", "Both", "None")))
+  
+  # World map 
+    World <- rnaturalearth::ne_countries(scale = 110,  returnclass = c("sf"))  
+    
+  # Merging map with data
+  data_simple <- merge(World, data, by='iso_a3_eh',  duplicateGeoms = TRUE)
+  
+  #Turn off s2 processing to avoid invalid polygons
+  sf::sf_use_s2(FALSE)
+  
+  # Create map
+    map <- tm_shape(data_simple) + 
+      tm_fill("value",
+                  style = "cat",
+                  palette = categories,
+                  title="") + 
+      tm_borders(col = "gray60", lwd = 0.5, lty = "solid", alpha = NA) +
+      tm_layout(frame = FALSE, legend.outside=TRUE)
+  
+  map
+  
+  tmap_save(map, file.path(figtab_out, "Figure 2.png"), width = 10, height = 3.5, dpi=300, units = "in")
+  
+# Clean up
+  rm(data_simple, map, World)
+
+```
+
+$~$
+
+#### Figure 3. Closest connection between each pair of indicators
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+  plot <- Interactions_ExpertElicit_AdjacencyMatrix %>% 
+    # Create a fifth value for identity so that they can be colored white
+    mutate(relationship = case_when(from == to ~ 4,
+                                    TRUE ~ relationship)) %>%
+    # Create an ordering variable so X-axis is grouped by theme
+    group_by(from) %>%
+    mutate(var_order = seq_along(from)) %>%
+    ungroup() %>%
+    # Create an ordering variable for theme
+    mutate(theme_order = case_when(from_theme == "Diets, Nutrition, & Health" ~ 1,
+                                   from_theme == "Environment, Natural resources, & Production" ~ 2,
+                                   from_theme == "Livelihoods, Poverty, & Equity" ~ 3,
+                                   from_theme == "Governance" ~ 4,
+                                   from_theme == "Resilience" ~ 5)) %>%
+  ggplot(aes(y = fct_reorder(from, from_order), x = fct_reorder(to, var_order), fill = as.factor(relationship))) +
+    geom_tile() +
+    ggforce::facet_col(vars(fct_reorder(from_theme,theme_order)), scales = "free_y", space = "free") +
+    scale_y_discrete(limits = rev) +
+    scale_x_discrete(position = "top") +
+    scale_fill_manual(values = c("gray80", "#2c7fb8","#9ecae1", "#deebf7", "white"),
+                      labels = c("None (or indirect via 3 or more)", "Direct", "Indirect via 1 indicator", "Indirect via 2 indicators")) +
+    theme_classic() +
+    guides(fill = FALSE) +
+    theme(axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            axis.text.x = element_text(angle = 90, size = 7),
+            axis.text.x.top = element_text(vjust = 0.05, hjust = 0),
+            axis.text.y = element_text(size = 7),
+          plot.caption.position = "plot") +
+    geom_vline(xintercept = seq(1.5, length(unique(Interactions_ExpertElicit_AdjacencyMatrix$to)) - 0.5, 1), 
+             linetype = "solid", 
+             color = "gray50", 
+             size = 0.25) +
+    geom_hline(yintercept = seq(1.5, length(unique(Interactions_ExpertElicit_Bidirect$from)) - 0.5, 1), 
+           linetype = "solid", 
+           color = "gray50", 
+           size = 0.25) 
+
+  forlegend <- Interactions_ExpertElicit_AdjacencyMatrix %>% 
+    # Create an ordering variable so X-axis is grouped by theme
+    group_by(from) %>%
+    mutate(var_order = seq_along(from)) %>%
+    ungroup() %>%
+    # Create an ordering variable for theme
+    mutate(theme_order = case_when(from_theme == "Diets, Nutrition, & Health" ~ 1,
+                                   from_theme == "Environment, Natural resources, & Production" ~ 2,
+                                   from_theme == "Livelihoods, Poverty, & Equity" ~ 3,
+                                   from_theme == "Governance" ~ 4,
+                                   from_theme == "Resilience" ~ 5)) %>%
+  ggplot(aes(y = fct_reorder(from, from_order), x = fct_reorder(to, var_order), fill = as.factor(relationship))) +
+    geom_tile() +
+    ggforce::facet_col(vars(fct_reorder(from_theme,theme_order)), scales = "free_y", space = "free") +
+    scale_y_discrete(limits = rev) +
+    scale_x_discrete(position = "top") +
+    scale_fill_manual(values = c("gray80", "#2c7fb8","#9ecae1", "#deebf7"),
+                      labels = c("None (or indirect via 3 or more)", "Direct", "Indirect via 1 indicator", "Indirect via 2 indicators")) +
+    theme_classic() +
+    theme(legend.position = "right",
+          legend.direction = "horizontal",
+          legend.key = element_rect(color="black"),
+          legend.text = element_text(size = 9),
+          legend.title = element_text(size = 10),
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            axis.text.x = element_text(angle = 90, size = 7),
+            axis.text.x.top = element_text(vjust = 0.05, hjust = 0),
+            axis.text.y = element_text(size = 7),
+          plot.caption.position = "plot") +
+    labs(fill = "Closest connection")
+  legend <- cowplot::get_legend(forlegend)
+  
+  # Add legend and save 
+  png(file.path(figtab_out, "Figure 3.png"), width = 7.5, height = 10, unit = "in", res = 300)
+    cowplot::plot_grid(plot, legend, nrow = 2, rel_heights = c(20,1), align = 'v')
+  dev.off()
+  
+# Clean up
+  rm(plot, legend, forlegend)
+  
+```
+
+
+#### Circular diagram of direct relationships
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+# Circular diagram
+# Use the long format and simplify column names
+  df_from <- Interactions_ExpertElicit_AdjacencyMatrix  %>% select(c("from", "from_theme")) %>% unique()
+  connect <- Interactions_ExpertElicit_Direct %>% 
+    rename(value = relationship) %>%
+    select(-c(from_theme)) %>%
+    filter(value !=0) # Keep only the connections (the edges in graph theory language)
+
+# Number of connections per indicator
+  connections <- c(as.character(connect$from), as.character(connect$to)) %>%
+    as.tibble() %>%
+    group_by(value) %>%
+    summarize(n=n()) 
+  colnames(connections) <- c("indicator", "n")
+
+# Create a table with the number of connections per indicator
+  connect_tbl <- connections %>%
+    arrange(desc(n))
+  colnames(connect_tbl) <- c("Indicator", "N connections")
+
+# Reorder data set and make the graph
+  connections <- left_join(connections, df_from, by = c("indicator"  = "from")) %>%
+    select(c(1:2, "from_theme")) %>%
+    rename(group = from_theme,
+           name = indicator) %>%
+    arrange(group) %>%
+    mutate(name = as.factor(name)) %>% unique()
+
+# keep only indicators in edges
+  connect <- connect %>%
+    filter(from %in% connections$name) %>%
+    filter(to %in% connections$name) 
+
+# Add label angle
+  number_of_bar=nrow(connections)
+  connections$id = seq(1, nrow(connections))
+  angle = 360 * (connections$id-0.5) /number_of_bar # Subtract 0.5 for letter positioning so that the angle of the label is at the center of the bars. Not extreme right (1) or extreme left (0)    
+  connections$hjust <- ifelse(angle > 90 & angle<270, 1, 0)
+  connections$angle <- ifelse(angle > 90 & angle<270, angle+180, angle)
+
+# Create a graph object with igraph
+  graph <- igraph::graph_from_data_frame(connect, vertices = connections, directed = TRUE)
+
+# Make the graph
+png(file.path(figtab_out, "Figure 4.png"), width = 10, height = 7.5, unit = "in", res = 300)
+
+ggraph::ggraph(graph, layout="circle") + 
+  ggraph::geom_edge_link(alpha=0.2, width=0.3) +
+  ggraph::geom_node_point(aes(size=n, color=as.factor(group), fill=group), alpha=0.9) +
+  scale_size_continuous(range=c(0.5,8)) +
+  scale_color_manual(values = themes_colors) +
+  ggraph::geom_node_text(aes(label=paste("    ",name,"    "), 
+                     angle=angle, hjust=hjust), size=2.3, color="black") +
+  theme_void() +
+  guides(color = guide_legend(order = 1,
+                              title = "Theme",
+                              override.aes = list(size = 5)),
+         size = guide_legend(order = 1, title = "Number of direct connections \n(from and to, combined)"),
+         fill = FALSE) +
+  theme(legend.position="right",
+    plot.margin=unit(c(0,0,0,0), "null"),
+    panel.spacing=unit(c(0,0,0,0), "null"),
+    plot.caption.position = "plot") +
+  expand_limits(x = c(-1.5, 1.5), y = c(-1.7, 1.5)) 
+
+dev.off()
+
+# Clean up
+  rm(connect, connect_tbl, connections, graph)
+
+```
+
