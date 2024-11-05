@@ -1824,3 +1824,23 @@ dev.off()
   rm(network, network_df, network2, df_from)
 
 ```
+
+
+#### Supplementary Data 1: Metadata and Codebook Latest data point per indicator
+This code creates the table that lists the latest data point per country-indicator pair
+```{r, warning = FALSE, messages = FALSE, echo = TRUE}
+latestdata <- FSCI_2024 %>%
+  filter(!(is.na(value))) %>%
+  group_by(country, indicator) %>%
+  mutate(maxyear = max(year)) %>%
+  ungroup() %>%
+  filter(year == maxyear) %>%
+  sort_by(country ~ indicator_order) %>%
+  select(c(country, year, indicator)) %>%
+  pivot_wider(names_from = indicator, values_from = year) %>%
+  mutate(across(everything(), ~case_when(. == "NULL" ~ "", TRUE ~ as.character(.)))) %>%
+  mutate(across(2:60, ~as.numeric(.))) %>%
+  arrange(country)
+write.csv(latestdata, file = file.path(figtab_out, "Latest data point.csv"))
+
+```
