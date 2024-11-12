@@ -42,7 +42,7 @@ This script contains all analysis tables and figures for the 2024 FSCI paper.
     knitr::opts_knit$set('./')
     
     # Set relative directory paths
-    data_out <- here::here("Output Data")
+    data_out <- here::here("Output data")
     figtab_out <- here::here("Figures & Tables")
 
 ### Set preferred options

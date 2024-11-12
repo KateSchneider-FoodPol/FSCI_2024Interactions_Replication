@@ -45,8 +45,8 @@ This script pulls and archives all raw data that is drawn from APIs to archive t
     knitr::opts_knit$set('./')
     
     # Set relative directory paths
-      data_in <- here::here("Input Data")
-      data_out <- here::here("Output Data")
+      data_in <- here::here("Input data")
+      data_out <- here::here("Output data")
       figtab_out <- here::here("Figures & Tables")
 
 ### Set preferred options

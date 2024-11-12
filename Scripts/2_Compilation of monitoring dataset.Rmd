@@ -31,8 +31,8 @@ This script does the following actions cleans and merges all of the data for the
     knitr::opts_knit$set('./')
     
     # Set relative directory paths
-      data_in <- here::here("Input Data")
-      data_out <- here::here("Output Data")
+      data_in <- here::here("Input data")
+      data_out <- here::here("Output data")
       figtab_out <- here::here("Figures & Tables")
 
 ### Set preferred options

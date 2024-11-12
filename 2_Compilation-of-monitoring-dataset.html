@@ -13,7 +13,7 @@
 
 <meta name="date" content="2024-11-12" />
 
-<title>FSCI 2024 - Data Management</title>
+<title>FSCI 2024 - Compilation of monitoring dataset</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -350,7 +350,8 @@ display: none;
 
 
 
-<h1 class="title toc-ignore">FSCI 2024 - Data Management</h1>
+<h1 class="title toc-ignore">FSCI 2024 - Compilation of monitoring
+dataset</h1>
 <h4 class="author">Kate Schneider</h4>
 <h4 class="date">12 November 2024</h4>
 
@@ -359,12 +360,9 @@ display: none;
 
 <div id="overall-objectives" class="section level3">
 <h3><em>Overall Objectives</em></h3>
-<p>This script imports and shapes the data from global expert
-elicitation of interactions between pairs of indicators. 3. Carries out
-automated literature search for pairs of identified interactions
-involving at least one governance indicator. The final literature
-results data set was manually screened for literature in English and
-relevant to food systems.</p>
+<p>This script does the following actions cleans and merges all of the
+data for the Food Systems Countdown Initiative indicators to create the
+updated monitoring dataset for 2024 analysis.</p>
 </div>
 <div id="setup-and-housekeeping" class="section level1">
 <h1><em>Setup and Housekeeping</em></h1>
@@ -374,6 +372,7 @@ relevant to food systems.</p>
     # R studio should prompt the installation of any packages not loaded on the instance where this script has been opened
     
     # Data management and multipurpose packages
+    library(countrycode)
     library(knitr)
     library(readxl)
     library(stringr)
@@ -387,6 +386,19 @@ relevant to food systems.</p>
 ## ✖ dplyr::filter() masks stats::filter()
 ## ✖ dplyr::lag()    masks stats::lag()
 ## ℹ Use the conflicted package (&lt;http://conflicted.r-lib.org/&gt;) to force all conflicts to become errors</code></pre>
+<pre class="r"><code>    library(readxl)
+    library(terra)</code></pre>
+<pre><code>## terra 1.7.71
+## 
+## Attaching package: &#39;terra&#39;
+## 
+## The following object is masked from &#39;package:tidyr&#39;:
+## 
+##     extract
+## 
+## The following object is masked from &#39;package:knitr&#39;:
+## 
+##     spin</code></pre>
 <pre class="r"><code>### File management
   
     # Set the root folder to the project root so that all file paths are relative to the main project folder
@@ -408,356 +420,463 @@ relevant to food systems.</p>
 ### Functions
     
     # Create a &quot;not in&quot; operator
-    `%notin%` &lt;- Negate(`%in%`) </code></pre>
+    `%notin%` &lt;- Negate(`%in%`) 
+    
+### Organization
+    col_order &lt;- c(&quot;country&quot;, &quot;M49_code&quot;, &quot;ISO3&quot;, &quot;indicator&quot;, 
+           &quot;year&quot;, &quot;value&quot;, &quot;unit&quot;)
+    row_order &lt;- c(&quot;country&quot;, &quot;year&quot;, &quot;variable_order&quot;)</code></pre>
 </div>
-<div id="import-and-shape-the-global-expert-elicitation-results" class="section level1">
-<h1><em>Import and shape the global expert elicitation results</em></h1>
-<pre class="r"><code># Import the matrix completed by expert elicitation
-  rawdata_all &lt;- readxl::read_xlsx(file.path(data_in,&quot;Interaction_scoring_sheet_All Groups_2024_March.xlsx&quot;), sheet = &quot;Sheet 1 - interaction_scoring_s&quot;)</code></pre>
+<div id="build-updated-monitoring-dataset" class="section level1">
+<h1><em>Build updated monitoring dataset</em></h1>
+<p><span class="math inline">\(~\)</span></p>
+<div id="import-data" class="section level4">
+<h4>Import Data</h4>
+<p>Data are imported by data source. First we import all sources that
+have an API in script 1 and load the archived dataset here. Next we
+import data from other direct downloads. Last, we import data that has
+to be manually downloaded first. Manually downloaded data are contained
+in the R project sub-folder “Input Data”.</p>
+<pre><code>##  [1] &quot;Domain Code&quot;     &quot;Domain&quot;          &quot;Area Code (M49)&quot; &quot;Area&quot;           
+##  [5] &quot;Element Code&quot;    &quot;Element&quot;         &quot;Item Code&quot;       &quot;Item&quot;           
+##  [9] &quot;Year Code&quot;       &quot;Year&quot;            &quot;Unit&quot;            &quot;Value&quot;</code></pre>
+<pre><code>##  [1] &quot;Cost of a healthy diet (CoHD), PPP dollar per person per day&quot;                                                              
+##  [2] &quot;Vegetables&quot;                                                                                                                
+##  [3] &quot;Fruits - Excluding Wine&quot;                                                                                                   
+##  [4] &quot;Prevalence of moderate or severe food insecurity in the total population (percent) (3-year average)&quot;                       
+##  [5] &quot;Prevalence of moderate or severe food insecurity in the male adult population (percent) (3-year average)&quot;                  
+##  [6] &quot;Prevalence of moderate or severe food insecurity in the female adult population (percent) (3-year average)&quot;                
+##  [7] &quot;Prevalence of moderate or severe food insecurity in the rural adult population (percent) (annual value)&quot;                   
+##  [8] &quot;Prevalence of moderate or severe food insecurity in the total population (percent) (annual value)&quot;                         
+##  [9] &quot;Prevalence of moderate or severe food insecurity in the town and semi-dense area adult population (percent) (annual value)&quot;
+## [10] &quot;Prevalence of moderate or severe food insecurity in the urban adult population (percent) (annual value)&quot;                   
+## [11] &quot;Prevalence of moderate or severe food insecurity in the male adult population (percent) (annual value)&quot;                    
+## [12] &quot;Prevalence of moderate or severe food insecurity in the female adult population (percent) (annual value)&quot;                  
+## [13] &quot;Prevalence of undernourishment (percent) (3-year average)&quot;                                                                 
+## [14] &quot;Prevalence of undernourishment (percent) (annual value)&quot;                                                                   
+## [15] &quot;Prevalence of unaffordability (PUA), percent&quot;                                                                              
+## [16] &quot;Meat of cattle with the bone, fresh or chilled&quot;                                                                            
+## [17] &quot;Cereals excluding rice&quot;                                                                                                    
+## [18] &quot;Raw milk of cattle&quot;                                                                                                        
+## [19] &quot;Rice&quot;                                                                                                                      
+## [20] &quot;Cereals, primary&quot;                                                                                                          
+## [21] &quot;Fruit Primary&quot;                                                                                                             
+## [22] &quot;Vegetables Primary&quot;                                                                                                        
+## [23] &quot;Value Added (Agriculture, Forestry and Fishing)&quot;                                                                           
+## [24] &quot;Per capita food supply variability (kcal/cap/day)&quot;                                                                         
+## [25] &quot;Nutrient balance&quot;                                                                                                          
+## [26] &quot;Pesticides (total)&quot;                                                                                                        
+## [27] &quot;Agricultural land&quot;                                                                                                         
+## [28] &quot;Cropland&quot;                                                                                                                  
+## [29] &quot;Country area&quot;                                                                                                              
+## [30] &quot;Beef and Buffalo Meat, primary&quot;                                                                                            
+## [31] &quot;Milk, Total&quot;                                                                                                               
+## [32] &quot;Agrifood systems&quot;</code></pre>
+<pre><code>##  [1] &quot;2017&quot;      &quot;2018&quot;      &quot;2019&quot;      &quot;2020&quot;      &quot;2021&quot;      &quot;2022&quot;     
+##  [7] &quot;2010&quot;      &quot;2011&quot;      &quot;2012&quot;      &quot;2013&quot;      &quot;2014&quot;      &quot;2015&quot;     
+## [13] &quot;2016&quot;      &quot;2014-2016&quot; &quot;2015-2017&quot; &quot;2016-2018&quot; &quot;2017-2019&quot; &quot;2018-2020&quot;
+## [19] &quot;2019-2021&quot; &quot;2020-2022&quot; &quot;2021-2023&quot; &quot;2000-2002&quot; &quot;2001-2003&quot; &quot;2002-2004&quot;
+## [25] &quot;2003-2005&quot; &quot;2004-2006&quot; &quot;2005-2007&quot; &quot;2006-2008&quot; &quot;2007-2009&quot; &quot;2008-2010&quot;
+## [31] &quot;2009-2011&quot; &quot;2010-2012&quot; &quot;2011-2013&quot; &quot;2012-2014&quot; &quot;2013-2015&quot; &quot;1961&quot;     
+## [37] &quot;1962&quot;      &quot;1963&quot;      &quot;1964&quot;      &quot;1965&quot;      &quot;1966&quot;      &quot;1967&quot;     
+## [43] &quot;1968&quot;      &quot;1969&quot;      &quot;1970&quot;      &quot;1971&quot;      &quot;1972&quot;      &quot;1973&quot;     
+## [49] &quot;1974&quot;      &quot;1975&quot;      &quot;1976&quot;      &quot;1977&quot;      &quot;1978&quot;      &quot;1979&quot;     
+## [55] &quot;1980&quot;      &quot;1981&quot;      &quot;1982&quot;      &quot;1983&quot;      &quot;1984&quot;      &quot;1985&quot;     
+## [61] &quot;1986&quot;      &quot;1987&quot;      &quot;1988&quot;      &quot;1989&quot;      &quot;1990&quot;      &quot;1991&quot;     
+## [67] &quot;1992&quot;      &quot;1993&quot;      &quot;1994&quot;      &quot;1995&quot;      &quot;1996&quot;      &quot;1997&quot;     
+## [73] &quot;1998&quot;      &quot;1999&quot;      &quot;2000&quot;      &quot;2001&quot;      &quot;2002&quot;      &quot;2003&quot;     
+## [79] &quot;2004&quot;      &quot;2005&quot;      &quot;2006&quot;      &quot;2007&quot;      &quot;2008&quot;      &quot;2009&quot;     
+## [85] &quot;2023&quot;</code></pre>
+<pre><code>##  [1] &quot;Cost of a healthy diet (CoHD), PPP dollar per person per day&quot;                                       
+##  [2] &quot;Vegetables&quot;                                                                                         
+##  [3] &quot;Fruits - Excluding Wine&quot;                                                                            
+##  [4] &quot;Prevalence of moderate or severe food insecurity in the total population (percent) (3-year average)&quot;
+##  [5] &quot;Prevalence of undernourishment (percent) (3-year average)&quot;                                          
+##  [6] &quot;Prevalence of unaffordability (PUA), percent&quot;                                                       
+##  [7] &quot;Meat of cattle with the bone, fresh or chilled&quot;                                                     
+##  [8] &quot;Cereals excluding rice&quot;                                                                             
+##  [9] &quot;Raw milk of cattle&quot;                                                                                 
+## [10] &quot;Rice&quot;                                                                                               
+## [11] &quot;Cereals, primary&quot;                                                                                   
+## [12] &quot;Fruit Primary&quot;                                                                                      
+## [13] &quot;Vegetables Primary&quot;                                                                                 
+## [14] &quot;Value Added (Agriculture, Forestry and Fishing)&quot;                                                    
+## [15] &quot;Per capita food supply variability (kcal/cap/day)&quot;                                                  
+## [16] &quot;Nutrient balance&quot;                                                                                   
+## [17] &quot;Pesticides (total)&quot;                                                                                 
+## [18] &quot;Agricultural land&quot;                                                                                  
+## [19] &quot;Cropland&quot;                                                                                           
+## [20] &quot;Country area&quot;                                                                                       
+## [21] &quot;Beef and Buffalo Meat, primary&quot;                                                                     
+## [22] &quot;Milk, Total&quot;                                                                                        
+## [23] &quot;Agrifood systems&quot;</code></pre>
+<pre><code>##  [1] &quot;Value&quot;                               &quot;Food supply quantity (kg/capita/yr)&quot;
+##  [3] &quot;Emissions intensity&quot;                 &quot;Production&quot;                         
+##  [5] &quot;Yield/Carcass Weight&quot;                &quot;Yield&quot;                              
+##  [7] &quot;Share of GDP US$&quot;                    &quot;Cropland nitrogen use efficiency&quot;   
+##  [9] &quot;Use per area of cropland&quot;            &quot;Area&quot;                               
+## [11] &quot;Area harvested&quot;                      &quot;Producing Animals/Slaughtered&quot;      
+## [13] &quot;Milk Animals&quot;                        &quot;Emissions (CO2eq) (AR5)&quot;</code></pre>
+<pre><code>## Rows: 529 Columns: 34
+## ── Column specification ────────────────────────────────────────────────────────
+## Delimiter: &quot;,&quot;
+## chr  (13): IndicatorCode, Indicator, ValueType, ParentLocationCode, ParentLo...
+## dbl   (3): Period, FactValueNumeric, Value
+## lgl  (17): IsLatestYear, Dim2 type, Dim2, Dim2ValueCode, Dim3 type, Dim3, Di...
+## dttm  (1): DateModified
+## 
+## ℹ Use `spec()` to retrieve the full column specification for this data.
+## ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.</code></pre>
+<pre><code>##   [1] &quot;15-60 mortality&quot;                                                          
+##   [2] &quot;2G, 3G and 4G network coverage&quot;                                           
+##   [3] &quot;5-14 mortality&quot;                                                           
+##   [4] &quot;Ability to live on household income&quot;                                      
+##   [5] &quot;Ability to source emergency funds&quot;                                        
+##   [6] &quot;Access to a bank account&quot;                                                 
+##   [7] &quot;Access to a cellphone&quot;                                                    
+##   [8] &quot;Access to basic sanitation services&quot;                                      
+##   [9] &quot;Access to basic water services&quot;                                           
+##  [10] &quot;Access to clean fuels and technologies for cooking&quot;                       
+##  [11] &quot;Access to electricity&quot;                                                    
+##  [12] &quot;Access to finance&quot;                                                        
+##  [13] &quot;Access to piped water&quot;                                                    
+##  [14] &quot;Access to quality education&quot;                                              
+##  [15] &quot;Adult literacy&quot;                                                           
+##  [16] &quot;Airport connectivity&quot;                                                     
+##  [17] &quot;Alternative dispute resolution mechanisms&quot;                                
+##  [18] &quot;Alternative sources of information&quot;                                       
+##  [19] &quot;Antenatal care coverage&quot;                                                  
+##  [20] &quot;Anti-corruption policy&quot;                                                   
+##  [21] &quot;Anti-monopoly policy&quot;                                                     
+##  [22] &quot;Antiretroviral HIV therapy&quot;                                               
+##  [23] &quot;Auditing and reporting standards&quot;                                         
+##  [24] &quot;Autonomy from the state&quot;                                                  
+##  [25] &quot;Availability of adequate food&quot;                                            
+##  [26] &quot;Availability of adequate shelter&quot;                                         
+##  [27] &quot;Availability of skilled workers&quot;                                          
+##  [28] &quot;Average applied tariff rate&quot;                                              
+##  [29] &quot;Average quality of higher education institutions&quot;                         
+##  [30] &quot;Births attended by skilled health staff&quot;                                  
+##  [31] &quot;Black carbon emissions&quot;                                                   
+##  [32] &quot;Budget transparency&quot;                                                      
+##  [33] &quot;Building quality control index&quot;                                           
+##  [34] &quot;Burden of government regulation&quot;                                          
+##  [35] &quot;Burden of obtaining a building permit&quot;                                    
+##  [36] &quot;Business costs of crime and violence&quot;                                     
+##  [37] &quot;Business costs of organised crime&quot;                                        
+##  [38] &quot;Business impact of rules on FDI&quot;                                          
+##  [39] &quot;Capacity to attract talented people&quot;                                      
+##  [40] &quot;Capital controls&quot;                                                         
+##  [41] &quot;Civil and ethnic war&quot;                                                     
+##  [42] &quot;Civil justice&quot;                                                            
+##  [43] &quot;Clean ocean water&quot;                                                        
+##  [44] &quot;Clientelism&quot;                                                              
+##  [45] &quot;CO2 emissions&quot;                                                            
+##  [46] &quot;Commercial bank branches&quot;                                                 
+##  [47] &quot;Communicable diseases&quot;                                                    
+##  [48] &quot;Complaint mechanisms&quot;                                                     
+##  [49] &quot;Complexity of tariffs&quot;                                                    
+##  [50] &quot;Confidence in financial institutions and banks&quot;                           
+##  [51] &quot;Confidence in judicial system and courts&quot;                                 
+##  [52] &quot;Confidence in local police&quot;                                               
+##  [53] &quot;Confidence in military&quot;                                                   
+##  [54] &quot;Confidence in national government&quot;                                        
+##  [55] &quot;Conflict-driven internal displacement&quot;                                    
+##  [56] &quot;Conflict of interest regulation&quot;                                          
+##  [57] &quot;Consensus on democracy and a market economy as a goal&quot;                    
+##  [58] &quot;Contraceptive prevalence&quot;                                                 
+##  [59] &quot;Cooperation in labour-employer relations&quot;                                 
+##  [60] &quot;Cost to comply with border regulations and procedures&quot;                    
+##  [61] &quot;Country credit rating&quot;                                                    
+##  [62] &quot;Country risk premium&quot;                                                     
+##  [63] &quot;Death and injury from forces of nature&quot;                                   
+##  [64] &quot;Death and injury from road traffic accidents&quot;                             
+##  [65] &quot;Delay in administrative proceedings&quot;                                      
+##  [66] &quot;Democracy level&quot;                                                          
+##  [67] &quot;Depressive disorders&quot;                                                     
+##  [68] &quot;Depth of credit information&quot;                                              
+##  [69] &quot;Digital skills among population&quot;                                          
+##  [70] &quot;Diphtheria immunisation&quot;                                                  
+##  [71] &quot;Disappearance cases&quot;                                                      
+##  [72] &quot;Dispute settlement through violence&quot;                                      
+##  [73] &quot;Distortive effect of taxes and subsidies&quot;                                 
+##  [74] &quot;Diversion of public funds&quot;                                                
+##  [75] &quot;Domestic and international market access for goods&quot;                       
+##  [76] &quot;Domestic and international market access for services&quot;                    
+##  [77] &quot;Donated money to charity&quot;                                                 
+##  [78] &quot;Due process and rights&quot;                                                   
+##  [79] &quot;Ease of establishing an electricity connection&quot;                           
+##  [80] &quot;Ease of starting a business&quot;                                              
+##  [81] &quot;Economic complexity&quot;                                                      
+##  [82] &quot;Education inequality&quot;                                                     
+##  [83] &quot;Education level of adult population&quot;                                      
+##  [84] &quot;Efficiency of customs clearance process&quot;                                  
+##  [85] &quot;Efficiency of dispute settlement&quot;                                         
+##  [86] &quot;Efficiency of government spending&quot;                                        
+##  [87] &quot;Efficiency of legal framework in challenging regulations&quot;                 
+##  [88] &quot;Efficiency of seaport services&quot;                                           
+##  [89] &quot;Efficient use of assets&quot;                                                  
+##  [90] &quot;Emotional wellbeing&quot;                                                      
+##  [91] &quot;Energy subsidies&quot;                                                         
+##  [92] &quot;Enforcement of regulations&quot;                                               
+##  [93] &quot;Equal treatment and absence of discrimination&quot;                            
+##  [94] &quot;Executive corruption&quot;                                                     
+##  [95] &quot;Executive powers are effectively limited by the judiciary and legislature&quot;
+##  [96] &quot;Existence of national screening programs&quot;                                 
+##  [97] &quot;Export quality&quot;                                                           
+##  [98] &quot;Exposure to fine particulate matter&quot;                                      
+##  [99] &quot;Extent of liberalisation of foreign trade&quot;                                
+## [100] &quot;Extent of market dominance&quot;                                               
+## [101] &quot;Extent of shareholder governance&quot;                                         
+## [102] &quot;Extrajudicial killings&quot;                                                   
+## [103] &quot;Family give positive energy&quot;                                              
+## [104] &quot;Female labour force participation&quot;                                        
+## [105] &quot;Financing of SMEs&quot;                                                        
+## [106] &quot;Fixed broadband subscriptions&quot;                                            
+## [107] &quot;Flexibility of employment contracts&quot;                                      
+## [108] &quot;Flexibility of hiring practices&quot;                                          
+## [109] &quot;Flexibility of wage determination&quot;                                        
+## [110] &quot;Flood occurrence&quot;                                                         
+## [111] &quot;Forest area&quot;                                                              
+## [112] &quot;Freedom from arbitrary interference with privacy&quot;                         
+## [113] &quot;Freedom from forced labour&quot;                                               
+## [114] &quot;Freedom from hiring and workplace discrimination&quot;                         
+## [115] &quot;Freedom of belief and religion&quot;                                           
+## [116] &quot;Freedom of foreigners to visit&quot;                                           
+## [117] &quot;Freedom of movement&quot;                                                      
+## [118] &quot;Freedom of opinion and expression&quot;                                        
+## [119] &quot;Freedom to own foreign currency bank accounts&quot;                            
+## [120] &quot;Freshwater withdrawal&quot;                                                    
+## [121] &quot;GDP per capita growth&quot;                                                    
+## [122] &quot;Generalised interpersonal trust&quot;                                          
+## [123] &quot;Government budget balance&quot;                                                
+## [124] &quot;Government debt&quot;                                                          
+## [125] &quot;Government media censorship&quot;                                              
+## [126] &quot;Government officials are sanctioned for misconduct&quot;                       
+## [127] &quot;Government powers are subject to independent and non-governmental checks&quot; 
+## [128] &quot;Government quality and credibility&quot;                                       
+## [129] &quot;Government religious intimidation and hostility&quot;                          
+## [130] &quot;Government response to slavery&quot;                                           
+## [131] &quot;Gross fixed water assets&quot;                                                 
+## [132] &quot;Gross savings&quot;                                                            
+## [133] &quot;Guarantee of assembly and association&quot;                                    
+## [134] &quot;Health facilities&quot;                                                        
+## [135] &quot;Health impact of air pollution&quot;                                           
+## [136] &quot;Health practitioners and staff&quot;                                           
+## [137] &quot;Health problems&quot;                                                          
+## [138] &quot;Healthcare coverage&quot;                                                      
+## [139] &quot;Help from family and friends when in trouble&quot;                             
+## [140] &quot;Helped a stranger&quot;                                                        
+## [141] &quot;Helped another household&quot;                                                 
+## [142] &quot;Hepatitis immunisation&quot;                                                   
+## [143] &quot;High-tech manufactured exports&quot;                                           
+## [144] &quot;Households with a refrigerator&quot;                                           
+## [145] &quot;Housing deprivation&quot;                                                      
+## [146] &quot;Implementation&quot;                                                           
+## [147] &quot;Indoor air quality&quot;                                                       
+## [148] &quot;Inflation volatility&quot;                                                     
+## [149] &quot;Insolvency recovery rate&quot;                                                 
+## [150] &quot;Installed electric capacity&quot;                                              
+## [151] &quot;Integrity of the legal system&quot;                                            
+## [152] &quot;Intellectual property protection&quot;                                         
+## [153] &quot;Intentional homicides&quot;                                                    
+## [154] &quot;International internet bandwidth&quot;                                         
+## [155] &quot;Internet usage&quot;                                                           
+## [156] &quot;Judicial corruption&quot;                                                      
+## [157] &quot;Judicial independence&quot;                                                    
+## [158] &quot;Labour force participation&quot;                                               
+## [159] &quot;Labour productivity&quot;                                                      
+## [160] &quot;Labour skill a business constraint&quot;                                       
+## [161] &quot;Lawful process for expropriation&quot;                                         
+## [162] &quot;Legal costs&quot;                                                              
+## [163] &quot;Legislative corruption&quot;                                                   
+## [164] &quot;LGBT rights&quot;                                                              
+## [165] &quot;Life expectancy at 60&quot;                                                    
+## [166] &quot;Liner shipping connectivity&quot;                                              
+## [167] &quot;Logistics performance&quot;                                                    
+## [168] &quot;Long term management of forest areas&quot;                                     
+## [169] &quot;Lower-secondary completion&quot;                                               
+## [170] &quot;Margin of preference in destination markets&quot;                              
+## [171] &quot;Marine protected areas&quot;                                                   
+## [172] &quot;Market-based competition&quot;                                                 
+## [173] &quot;Maternal mortality&quot;                                                       
+## [174] &quot;Measles immunisation&quot;                                                     
+## [175] &quot;Methane emissions&quot;                                                        
+## [176] &quot;Military involvement in rule of law and politics&quot;                         
+## [177] &quot;New business density&quot;                                                     
+## [178] &quot;Non-communicable diseases&quot;                                                
+## [179] &quot;Non-discriminatory civil justice&quot;                                         
+## [180] &quot;Non-tariff measures&quot;                                                      
+## [181] &quot;NOx emissions&quot;                                                            
+## [182] &quot;Number of tax payments&quot;                                                   
+## [183] &quot;Obesity&quot;                                                                  
+## [184] &quot;Occupational mortality&quot;                                                   
+## [185] &quot;One-sided conflict deaths&quot;                                                
+## [186] &quot;Opportunity to make friends&quot;                                              
+## [187] &quot;Overexploitation of fish stocks&quot;                                          
+## [188] &quot;Patent applications&quot;                                                      
+## [189] &quot;Perceived tolerance of ethnic minorities&quot;                                 
+## [190] &quot;Perceived tolerance of immigrants&quot;                                        
+## [191] &quot;Perceived tolerance of LGBT individuals&quot;                                  
+## [192] &quot;Personal autonomy and individual rights&quot;                                  
+## [193] &quot;Pesticide regulation&quot;                                                     
+## [194] &quot;Physical pain&quot;                                                            
+## [195] &quot;Physical security of women&quot;                                               
+## [196] &quot;Policy coordination&quot;                                                      
+## [197] &quot;Policy learning&quot;                                                          
+## [198] &quot;Political diversity of media perspectives&quot;                                
+## [199] &quot;Political imprisonment&quot;                                                   
+## [200] &quot;Political participation and rights&quot;                                       
+## [201] &quot;Political terror&quot;                                                         
+## [202] &quot;Poverty rate at $1.90 a day&quot;                                              
+## [203] &quot;Poverty rate at $3.20 a day&quot;                                              
+## [204] &quot;Poverty rate at $5.50 a day&quot;                                              
+## [205] &quot;Poverty rate at national poverty lines&quot;                                   
+## [206] &quot;Pre-primary enrolment (net)&quot;                                              
+## [207] &quot;Press freedom from government censorship&quot;                                 
+## [208] &quot;Press freedom from physical repression&quot;                                   
+## [209] &quot;Prevalence of foreign ownership of companies&quot;                             
+## [210] &quot;Prevalence of non-tariff barriers&quot;                                        
+## [211] &quot;Prevalence of stunting in children under-5&quot;                               
+## [212] &quot;Prevalence of undernourishment&quot;                                           
+## [213] &quot;Prevalence of wasting in children under-5&quot;                                
+## [214] &quot;Primary completion&quot;                                                       
+## [215] &quot;Primary education quality&quot;                                                
+## [216] &quot;Primary enrolment&quot;                                                        
+## [217] &quot;Prioritisation&quot;                                                           
+## [218] &quot;Private companies are protected and permitted&quot;                            
+## [219] &quot;Procedures to register property&quot;                                          
+## [220] &quot;Property cost of terrorism&quot;                                               
+## [221] &quot;Property stolen&quot;                                                          
+## [222] &quot;Protection for biodiverse areas&quot;                                          
+## [223] &quot;Protection of property rights&quot;                                            
+## [224] &quot;Protection of women&#39;s workplace, education and family rights&quot;             
+## [225] &quot;Public sector corruption&quot;                                                 
+## [226] &quot;Public trust in politicians&quot;                                              
+## [227] &quot;Publicised laws and government data&quot;                                      
+## [228] &quot;Quality of banking system and capital markets&quot;                            
+## [229] &quot;Quality of judicial administration&quot;                                       
+## [230] &quot;Quality of land administration&quot;                                           
+## [231] &quot;Quality of roads&quot;                                                         
+## [232] &quot;Quality of vocational training&quot;                                           
+## [233] &quot;Rail density&quot;                                                             
+## [234] &quot;Raised blood pressure&quot;                                                    
+## [235] &quot;Redundancy costs&quot;                                                         
+## [236] &quot;Refugees (origin country)&quot;                                                
+## [237] &quot;Regulation of property possession and exchange&quot;                           
+## [238] &quot;Regulatory quality&quot;                                                       
+## [239] &quot;Reliability of electricity supply&quot;                                        
+## [240] &quot;Reliability of water supply&quot;                                              
+## [241] &quot;Renewable water resources&quot;                                                
+## [242] &quot;Respect&quot;                                                                  
+## [243] &quot;Restrictions on financial transactions&quot;                                   
+## [244] &quot;Right to associate and organise&quot;                                          
+## [245] &quot;Right to information&quot;                                                     
+## [246] &quot;Road density&quot;                                                             
+## [247] &quot;Rural access to roads&quot;                                                    
+## [248] &quot;Safety walking alone at night&quot;                                            
+## [249] &quot;Satisfaction with air quality&quot;                                            
+## [250] &quot;Satisfaction with freedom&quot;                                                
+## [251] &quot;Satisfaction with healthcare&quot;                                             
+## [252] &quot;Satisfaction with preservation efforts&quot;                                   
+## [253] &quot;Satisfaction with public transportation&quot;                                  
+## [254] &quot;Satisfaction with roads and highways&quot;                                     
+## [255] &quot;Satisfaction with water quality&quot;                                          
+## [256] &quot;Secondary education quality&quot;                                              
+## [257] &quot;Secondary school enrolment&quot;                                               
+## [258] &quot;Share of imports free from tariff duties&quot;                                 
+## [259] &quot;Skillset of university graduates&quot;                                         
+## [260] &quot;Smoking&quot;                                                                  
+## [261] &quot;SO2 emissions&quot;                                                            
+## [262] &quot;Soundness of banks&quot;                                                       
+## [263] &quot;Stability of marine biodiversity&quot;                                         
+## [264] &quot;State of cluster development&quot;                                             
+## [265] &quot;Strength of insolvency framework&quot;                                         
+## [266] &quot;Substance use disorders&quot;                                                  
+## [267] &quot;Suicide&quot;                                                                  
+## [268] &quot;Sustainable nitrogen management&quot;                                          
+## [269] &quot;Terrestrial protected areas&quot;                                              
+## [270] &quot;Terrorism deaths&quot;                                                         
+## [271] &quot;Terrorism incidents&quot;                                                      
+## [272] &quot;Terrorism injuries&quot;                                                       
+## [273] &quot;Tertiary completion&quot;                                                      
+## [274] &quot;Tertiary enrolment&quot;                                                       
+## [275] &quot;Time spent complying with regulations&quot;                                    
+## [276] &quot;Time spent filing taxes&quot;                                                  
+## [277] &quot;Time to comply with border regulations and procedures&quot;                    
+## [278] &quot;Time to resolve commercial cases&quot;                                         
+## [279] &quot;Trade-weighted average tariff faced in destination markets&quot;               
+## [280] &quot;Transition of power is subject to the law&quot;                                
+## [281] &quot;Transparency of government policy&quot;                                        
+## [282] &quot;Tuberculosis treatment coverage&quot;                                          
+## [283] &quot;Two-sided conflict deaths&quot;                                                
+## [284] &quot;Under 5 mortality&quot;                                                        
+## [285] &quot;Unemployment&quot;                                                             
+## [286] &quot;Unintentional death and injury&quot;                                           
+## [287] &quot;Unsafe water, sanitation or hygiene&quot;                                      
+## [288] &quot;Use of digital payments&quot;                                                  
+## [289] &quot;Use of public office for private gain&quot;                                    
+## [290] &quot;Use of torture&quot;                                                           
+## [291] &quot;Venture capital availability&quot;                                             
+## [292] &quot;Voiced opinion to a public official&quot;                                      
+## [293] &quot;Volunteering&quot;                                                             
+## [294] &quot;Voter turnout&quot;                                                            
+## [295] &quot;Waged and salaried workers&quot;                                               
+## [296] &quot;Wastewater treatment&quot;                                                     
+## [297] &quot;Water production&quot;                                                         
+## [298] &quot;Women&#39;s agency&quot;                                                           
+## [299] &quot;Women&#39;s average years in school&quot;                                          
+## [300] &quot;Youth unemployment&quot;</code></pre>
 <pre><code>## New names:
-## • `` -&gt; `...2`
-## • `` -&gt; `...3`
-## • `` -&gt; `...4`
-## • `` -&gt; `...5`
-## • `` -&gt; `...6`
-## • `` -&gt; `...7`
-## • `` -&gt; `...8`
-## • `` -&gt; `...9`
-## • `` -&gt; `...10`
-## • `` -&gt; `...11`</code></pre>
-<pre class="r"><code>  labels &lt;- readxl::read_xlsx(file.path(data_in,&quot;Interaction_scoring_sheet_All Groups_2024_March.xlsx&quot;), sheet = &quot;Indicator names and labels&quot;)
-
-# Start with the first direction of relationship (Column E)
-  rawdata &lt;- rawdata_all %&gt;%
-    select(c(1:2,4:5)) %&gt;%
-    # Label the columns
-    rename(theme = 1,
-           indicator = 2,
-           dependent = 3,
-           relationship = 4) %&gt;%
-    # Now remove the rows of header information and empty end rows
-    filter(row_number() %notin% 1,
-           row_number() %notin% 2452:2458) %&gt;%
-    # Factor the indicator names and themes, make the relationship numeric
-    mutate(theme = as.factor(theme),
-           indicator = as.factor(indicator),
-           dependent = as.factor(dependent),
-           relationship = as.numeric(relationship)) %&gt;%
-    # Replace NA with 0 (no relationship)
-    mutate(relationship = case_when(is.na(relationship) ~ 0,
-                                    TRUE ~ relationship))
-
-# Merge in the short labels for the indicators for figures
-  rawdata &lt;- left_join(rawdata, labels, by = &quot;indicator&quot;) %&gt;%
-    rename(from = short_label,
-           from_theme = theme.y) %&gt;%
-    select(-c(indicator_order))
-  rawdata &lt;- left_join(rawdata, labels, by = c(&quot;dependent&quot; = &quot;indicator&quot;)) %&gt;%
-    rename(to = short_label,
-           to_theme = theme) %&gt;%
-    select(-c(theme.x, indicator, dependent, indicator_order)) %&gt;%
-    relocate(relationship, .after = to_theme) %&gt;%
-    mutate(to = as.factor(to),
-           from = as.factor(from),
-           from_theme = as.factor(from_theme),
-           to_theme = as.factor(to_theme))
-
-# Remove the theme columns
-  raw_wide &lt;- rawdata %&gt;%
-    select(-c(contains(&quot;theme&quot;))) %&gt;%
-    # Pivot wide
-    pivot_wider(names_from = to, 
-                values_from = relationship, 
-                values_fill = 0) %&gt;%
-    relocate(&quot;Cost of healthy diet&quot;, .after = from)
-  
-# Confirm indicators are in the correct order
-  raw_wide &lt;- left_join(raw_wide, labels, by = c(&quot;from&quot; = &quot;short_label&quot;)) %&gt;%
-    select(-c(indicator, theme))
-  raw_wide &lt;- raw_wide[order(raw_wide$indicator_order), ]
-  raw_wide &lt;- raw_wide %&gt;%
-    select(-c(indicator_order)) %&gt;%
-    relocate(`Social capital index`, .before = `Mobile phones per 100 people`)
-
-
-# Convert to a matrix
-# Remove the first column because matrices can only have one class of data
-  matrix1 &lt;- as.matrix(raw_wide[, -1]) # eliminate rownames column to get numerical matrix
-
-# Add back the row names
-  rownames(matrix1) &lt;- raw_wide$from # assign rownames
-
-# Square and cube the matrix
-  matrix2 &lt;- matrix1 %*% matrix1
-  matrix3 &lt;- matrix1 %*% matrix1 %*% matrix1
-
-# Reshape the second and third order connections into long data frames
-# Create a function to reshape matrix to data frame
-  reshapetodf &lt;- function(input_matrix) {
-    input &lt;- data.frame(input_matrix) 
-    input$from &lt;- row.names(input)   
-    input &lt;- input %&gt;%
-      pivot_longer(1:50, names_to = &quot;to&quot;, values_to = &quot;relationship&quot;) %&gt;%
-      mutate(to = stringr::str_replace_all(to, &quot;\\.&quot;, &quot; &quot;),        
-             to = stringr::str_replace_all(to, &quot;   &quot;, &quot; &quot;),
-             to = case_when(to == &quot;NCD Protect&quot; ~ &quot;NCD-Protect&quot;,
-                            to == &quot;NCD Risk&quot; ~ &quot;NCD-Risk&quot;,
-                            TRUE ~ to)) 
-    return(input)
-  }
-
-# Execute the function on the matrices
-  df_order2 &lt;- reshapetodf(matrix2)
-  df_order3 &lt;- reshapetodf(matrix3)
-
-# Add from theme to the long second and third order connections
-  rawdata_from &lt;- rawdata %&gt;% select(c(&quot;from&quot;, &quot;from_theme&quot;)) %&gt;% unique()
-  df_order2 &lt;- left_join(df_order2, rawdata_from, by = &quot;from&quot;) 
-  df_order3 &lt;- left_join(df_order3, rawdata_from, by = &quot;from&quot;) 
-
-# Add indicator order for from variable
-  rawdata &lt;- left_join(rawdata, labels[,c(&quot;short_label&quot;, &quot;indicator_order&quot;)], by = c(&quot;from&quot; = &quot;short_label&quot;))
-    rawdata &lt;- rawdata %&gt;% rename(from_order = indicator_order)
-  df_order2 &lt;- left_join(df_order2, labels[,c(&quot;short_label&quot;, &quot;indicator_order&quot;)], by = c(&quot;from&quot; = &quot;short_label&quot;))
-    df_order2 &lt;- df_order2 %&gt;% rename(from_order = indicator_order)
-  df_order3 &lt;- left_join(df_order3, labels[,c(&quot;short_label&quot;, &quot;indicator_order&quot;)], by = c(&quot;from&quot; = &quot;short_label&quot;))
-    df_order3 &lt;- df_order3 %&gt;% rename(from_order = indicator_order)</code></pre>
+## • `` -&gt; `...1`
+## • `ADM0_NAME` -&gt; `ADM0_NAME...5`
+## • `` -&gt; `...16`
+## • `` -&gt; `...17`
+## • `ADM0_NAME` -&gt; `ADM0_NAME...18`</code></pre>
 <p><span class="math inline">\(~\)</span></p>
-<p>Repeat for the relationships identified in the other direction
-(Column F)</p>
-<pre class="r"><code># Load data and clean
-  rawdata2 &lt;- rawdata_all %&gt;%
-    select(c(1:2,4,6)) %&gt;%
-    # Label the columns
-    rename(theme = 1,
-           dependent = 2,
-           indicator = 3,
-           relationship = 4) %&gt;%
-    # Fix the open budget index name in the dependent column
-    mutate(dependent = case_when(dependent == &quot;Open Budget Index&quot; ~ &quot;Open Budget Index Score&quot;,
-                                 TRUE ~ dependent)) %&gt;%
-    # Now remove the rows of header information and empty end rows
-    filter(row_number() %notin% 1,
-           row_number() %notin% 2452:2458) %&gt;%
-    # Factor the indicator names and themes, make the relationship numeric
-    mutate(theme = as.factor(theme),
-           indicator = as.factor(indicator),
-           dependent = as.factor(dependent),
-           relationship = as.numeric(relationship)) %&gt;%
-    # Replace NA with 0 (no relationship)
-    mutate(relationship = case_when(is.na(relationship) ~ 0,
-                                    TRUE ~ relationship))
-
-# Merge in the short labels for the indicators for figures
-  rawdata2 &lt;- left_join(rawdata2, labels, by = &quot;indicator&quot;) %&gt;%
-    rename(from = short_label,
-           from_theme = theme.y) %&gt;%
-    select(-c(indicator_order))
-  rawdata2 &lt;- left_join(rawdata2, labels, by = c(&quot;dependent&quot; = &quot;indicator&quot;)) %&gt;%
-    rename(to = short_label,
-           to_theme = theme) %&gt;%
-    select(-c(1:3)) %&gt;%
-    relocate(relationship, .after = to_theme) %&gt;%
-    select(-c(indicator_order))
-  
-  # Remove the theme columns
-  raw_wide2 &lt;- rawdata2 %&gt;%
-    select(-c(contains(&quot;theme&quot;))) %&gt;%
-    # Pivot wide
-    pivot_wider(names_from = to, 
-                values_from = relationship, 
-                values_fill = 0) %&gt;%
-    relocate(&quot;Cost of healthy diet&quot;, .after = from) %&gt;%
-    filter(!(is.na(from)))
-  
-# Confirm indicators are in the correct order
-  raw_wide2 &lt;- left_join(raw_wide2, labels, by = c(&quot;from&quot; = &quot;short_label&quot;)) %&gt;%
-    select(-c(indicator, theme))
-  raw_wide2 &lt;- raw_wide2[order(raw_wide2$indicator_order), ]
-  raw_wide2 &lt;- raw_wide2 %&gt;%
-    select(-c(indicator_order)) %&gt;%
-    relocate(`Social capital index`, .before = `Mobile phones per 100 people`)
-
-# Convert to matrix
-  matrix1_v2 &lt;- as.matrix(raw_wide2[, -1]) # eliminate rownames column to get numerical matrix
-
-# Add back the row names
-  rownames(matrix1_v2) &lt;- raw_wide2$from # assign rownames
-
-# Square and cube the matrix
-  matrix2_v2 &lt;- matrix1_v2 %*% matrix1_v2
-  matrix3_v2 &lt;- matrix1_v2 %*% matrix1_v2 %*% matrix1_v2
-
-# Reshape the second and third order connections into long data frames
-# Add from theme to the long second and third order connections
-  rawdata_from2 &lt;- rawdata2 %&gt;% select(c(&quot;from&quot;, &quot;from_theme&quot;)) %&gt;% unique %&gt;%
-    filter(!(is.na(from))) %&gt;%
-    collapse::roworderv(neworder = 50)
-
-  df_order2_v2 &lt;- reshapetodf(matrix2_v2) 
-  df_order3_v2 &lt;- reshapetodf(matrix3_v2) 
-
-# Add from theme to the long second and third order connections
-  rawdata_from_v2 &lt;- rawdata2 %&gt;% select(c(&quot;from&quot;, &quot;from_theme&quot;)) %&gt;% unique() %&gt;%
-    filter(!(is.na(from)))
-  df_order2_v2 &lt;- left_join(df_order2_v2, rawdata_from, by = &quot;from&quot;) 
-  df_order3_v2 &lt;- left_join(df_order3_v2, rawdata_from, by = &quot;from&quot;) 
-  
-# Add indicator order variable for the from variable
-  rawdata2 &lt;- left_join(rawdata2, labels[,c(&quot;short_label&quot;, &quot;indicator_order&quot;)], by = c(&quot;from&quot; = &quot;short_label&quot;))
-    rawdata2 &lt;- rawdata2 %&gt;% rename(from_order = indicator_order)
-  df_order2_v2 &lt;- left_join(df_order2_v2, labels[,c(&quot;short_label&quot;, &quot;indicator_order&quot;)], by = c(&quot;from&quot; = &quot;short_label&quot;))
-    df_order2_v2 &lt;- df_order2_v2 %&gt;% rename(from_order = indicator_order)
-  df_order3_v2 &lt;- left_join(df_order3_v2, labels[,c(&quot;short_label&quot;, &quot;indicator_order&quot;)], by = c(&quot;from&quot; = &quot;short_label&quot;))
-    df_order3_v2 &lt;- df_order3_v2 %&gt;% rename(from_order = indicator_order)</code></pre>
-<p>Create a new data frame that merges column E and F information,
-ensuring all relationships identified are included, and preserving the
-directionality of the relationships.</p>
-<pre class="r"><code># Create combined matrix by adding matrix 1 (column E) to matrix1_v2 (column F)
-
-# Add the matrix elements together into a new matrix
-  combo_matrix_keepbidirect &lt;- matrix1 + matrix1_v2
-
-# Now any cells with causality in both directions have a value of 2 - replace with 1
-  combo_matrix &lt;- combo_matrix_keepbidirect
-  combo_matrix[combo_matrix==2] &lt;- 1
-
-# Reshape to data frame, fixing indicator names that lose punctuation in the matrix conversion
-  combo_df &lt;- reshapetodf(combo_matrix) %&gt;%
-    mutate(to = str_replace_all(to, &quot;Conservation of genetic resources  plants&quot;, &quot;Conservation of genetic resources, plants&quot;)) %&gt;%
-    mutate(to = str_replace_all(to, &quot;Conservation of genetic resources  animals&quot;, &quot;Conservation of genetic resources, animals&quot;)) %&gt;%
-    mutate(to = str_replace_all(to, &quot;Minimum dietary diversity  women&quot;, &quot;Minimum dietary diversity, women&quot;)) %&gt;%
-    mutate(to = str_replace_all(to, &quot;Minimum dietary diversity  child&quot;, &quot;Minimum dietary diversity, child&quot;)) %&gt;%
-    mutate(to = str_replace_all(to, &quot;Ultra processed food sales&quot;, &quot;Ultra-processed food sales&quot;))
-  
-  combo_df_keepbidirect &lt;- reshapetodf(combo_matrix_keepbidirect)  %&gt;%
-    mutate(to = str_replace_all(to, &quot;Conservation of genetic resources  plants&quot;, &quot;Conservation of genetic resources, plants&quot;)) %&gt;%
-    mutate(to = str_replace_all(to, &quot;Conservation of genetic resources  animals&quot;, &quot;Conservation of genetic resources, animals&quot;))  %&gt;%
-    mutate(to = str_replace_all(to, &quot;Minimum dietary diversity  women&quot;, &quot;Minimum dietary diversity, women&quot;)) %&gt;%
-    mutate(to = str_replace_all(to, &quot;Minimum dietary diversity  child&quot;, &quot;Minimum dietary diversity, child&quot;)) %&gt;%
-    mutate(to = str_replace_all(to, &quot;Ultra processed food sales&quot;, &quot;Ultra-processed food sales&quot;))
-
-# Add from theme 
-  combo_df &lt;- left_join(combo_df, rawdata_from, by = &quot;from&quot;) 
-  combo_df_keepbidirect &lt;- left_join(combo_df_keepbidirect, rawdata_from, by = &quot;from&quot;) 
-
-# Square and cube the matrix
-  matrix2_combo &lt;- combo_matrix %*% combo_matrix
-  matrix3_combo &lt;- combo_matrix %*% combo_matrix %*% combo_matrix
-
-# Reshape matrices to data frame
-  df_order2_combo &lt;- reshapetodf(matrix2_combo) 
-  df_order3_combo &lt;- reshapetodf(matrix3_combo) 
-
-# Add from theme to the long second and third order connections
-  df_order2_combo &lt;- left_join(df_order2_combo, rawdata_from, by = &quot;from&quot;)
-  df_order3_combo &lt;- left_join(df_order3_combo, rawdata_from, by = &quot;from&quot;) 
-  
-# Add indicator order variable for the from variable
-  combo_df &lt;- left_join(combo_df, labels[,c(&quot;short_label&quot;, &quot;indicator_order&quot;)], by = c(&quot;from&quot; = &quot;short_label&quot;))
-    combo_df &lt;- combo_df %&gt;% rename(from_order = indicator_order)
-  combo_df_keepbidirect &lt;- left_join(combo_df_keepbidirect, labels[,c(&quot;short_label&quot;, &quot;indicator_order&quot;)], by = c(&quot;from&quot; = &quot;short_label&quot;))
-    combo_df_keepbidirect &lt;- combo_df_keepbidirect %&gt;% rename(from_order = indicator_order)
-  df_order2_combo &lt;- left_join(df_order2_combo, labels[,c(&quot;short_label&quot;, &quot;indicator_order&quot;)], by = c(&quot;from&quot; = &quot;short_label&quot;))
-    df_order2_combo &lt;- df_order2_combo %&gt;% rename(from_order = indicator_order)
-  df_order3_combo &lt;- left_join(df_order3_combo, labels[,c(&quot;short_label&quot;, &quot;indicator_order&quot;)], by = c(&quot;from&quot; = &quot;short_label&quot;))
-    df_order3_combo &lt;- df_order3_combo %&gt;% rename(from_order = indicator_order)
-    
-# Clean up
-  rm(raw_wide, raw_wide2)
-  
-# Bring back theme 
-  combo_df_keepbidirect &lt;- left_join(combo_df_keepbidirect, rawdata[,c(&quot;to&quot;, &quot;to_theme&quot;)], by = &quot;to&quot;) %&gt;% unique()</code></pre>
+<p>Now we create the variables that we have developed or modify.</p>
 <p><span class="math inline">\(~\)</span></p>
-<p>Combine matrices keeping lowest order connection for each pair.</p>
-<pre class="r"><code>  # Replace all values in matrix 2 with 2, and matrix 3 with 3 (indicating the order of connection between each pair of variables instead of the number of pathways connecting them)
-    matrix2_combo[matrix2_combo &gt; 0] &lt;- 2
-    matrix3_combo[matrix3_combo &gt; 0] &lt;- 3
-  
-    matrix_combined_combo &lt;- ifelse(combo_matrix == 1, combo_matrix, matrix2_combo) # keep 1&#39;s from matrix 1, otherwise use the values of matrix 2
-    matrix_combined_combo &lt;- ifelse(matrix_combined_combo == 0, matrix3_combo, matrix_combined_combo) # now use the values from matrix 3 only if the combo matrix cell is 0 (no first or second order connection)
-  
-  # Reshape
-    matrix_combined_df_combo &lt;- reshapetodf(matrix_combined_combo) %&gt;%
-      mutate(from = as.factor(from))  %&gt;%
-      mutate(to = str_replace_all(to, &quot;Conservation of genetic resources  plants&quot;, &quot;Conservation of genetic resources, plants&quot;)) %&gt;%
-      mutate(to = str_replace_all(to, &quot;Conservation of genetic resources  animals&quot;, &quot;Conservation of genetic resources, animals&quot;))  %&gt;%
-      mutate(to = str_replace_all(to, &quot;Minimum dietary diversity  women&quot;, &quot;Minimum dietary diversity, women&quot;)) %&gt;%
-      mutate(to = str_replace_all(to, &quot;Minimum dietary diversity  child&quot;, &quot;Minimum dietary diversity, child&quot;)) %&gt;%
-      mutate(to = str_replace_all(to, &quot;Ultra processed food sales&quot;, &quot;Ultra-processed food sales&quot;))
-  
-  # Bring back theme 
-    matrix_combined_df_combo &lt;- left_join(matrix_combined_df_combo, rawdata[,c(&quot;from&quot;, &quot;from_theme&quot;)], by = &quot;from&quot;) %&gt;% unique()
-    matrix_combined_df_combo &lt;- left_join(matrix_combined_df_combo, rawdata[,c(&quot;to&quot;, &quot;to_theme&quot;)], by = &quot;to&quot;) %&gt;% unique()
-    
-  # Bring back variable order for from
-    matrix_combined_df_combo &lt;- left_join(matrix_combined_df_combo, labels[,c(&quot;short_label&quot;, &quot;indicator_order&quot;)], by = c(&quot;from&quot; = &quot;short_label&quot;))
-    matrix_combined_df_combo &lt;- matrix_combined_df_combo %&gt;% rename(from_order = indicator_order)</code></pre>
+<p>Ratio of all disasters to GDP</p>
 <p><span class="math inline">\(~\)</span></p>
-<p>Save the datasets</p>
-<pre class="r"><code># Rename data frames for interpretability and subsequent analysis
-    Interactions_ExpertElicit_Direct &lt;- combo_df
-    Interactions_ExpertElicit_DirectMatrix &lt;- combo_matrix
-    Interactions_ExpertElicit_AdjacencyMatrix &lt;- matrix_combined_df_combo
-    Interactions_ExpertElicit_Bidirect &lt;- combo_df_keepbidirect
-
-# Save data sets in format needed for network diagrams
-    save(Interactions_ExpertElicit_Direct, Interactions_ExpertElicit_DirectMatrix,
-         Interactions_ExpertElicit_AdjacencyMatrix, Interactions_ExpertElicit_Bidirect,
-         file = file.path(data_out, &quot;Interactions_ExpertElicititation.RData&quot;))
-    
-# Clean up
-    rm(df_order2, df_order2_combo, df_order2_v2, df_order3, df_order3_combo, df_order3_v2, duplicate_pairs, matrix_combined_combo, matrix1, matrix1_v2, matrix2, matrix2_v2, matrix2_combo, matrix3, matrix3_combo, matrix3_v2, rawdata, rawdata_all, rawdata_from, rawdata_from2, rawdata_from_v2, combo_matrix_keepbidirect, rawdata2, combo_df, combo_matrix, matrix_combined_df_combo, combo_df_keepbidirect)</code></pre>
-<p>Now export the combined matrix pairs into the literature search
-analysis as they will form the basis of the first step in the search
-(naive search).</p>
-<pre class="r"><code># Develop a data frame of the indicator pairs
-  indicatorpairs &lt;- Interactions_ExpertElicit_AdjacencyMatrix %&gt;%
-    filter(relationship == 1) %&gt;%
-    filter(from != to) %&gt;% ## Remove identity 
-    filter(from_theme == &quot;Governance&quot; | to_theme == &quot;Governance&quot;) %&gt;%
-    select(from, to)
-
-# Now remove duplicate pairings (regardless of their order in to or from columns)
-# function(x) is defining a function that sorts the elements of each row of the data frame data, and then concatenates them into a single string with &quot;-&quot; as the separator. This is done for each row of the data frame using apply, resulting in a vector of sorted pairs of &quot;from&quot; and &quot;to&quot; values for each row.
-  sorted_pairs &lt;- apply(indicatorpairs, 1, function(x) paste(sort(x), collapse = &quot; AND &quot;))
-    
-# Create a boolean column that marks the second occurence of a pair as a duplicate
-  duplicate_pairs &lt;- as.data.frame(duplicated(sorted_pairs) | duplicated(sorted_pairs, fromLast = TRUE))
-  duplicate_pairs &lt;- duplicate_pairs %&gt;%
-    rename(duplicate = 1)
-  
-# Add in the duplication information to the sorted pairs
-  searchterms &lt;- cbind(sorted_pairs, duplicate_pairs) %&gt;%
-    # Drop the duplicate rows
-    filter(duplicate != TRUE) %&gt;%
-    # Rename 
-    rename(naive_search = 1) %&gt;%
-    select(-c(duplicate))
-
-# Now split back up into multiple columns
-   searchterms &lt;- searchterms %&gt;%
-     tidyr::separate(naive_search, c(&quot;concept 1&quot;, &quot;concept 2&quot;), sep = &quot; AND &quot;)
-    
-  # Manually revise some search terms
-    # Create a find and replace function:
-    findreplace &lt;- function(x, y, data) {
-      for (i in seq_along(x)) {
-        data &lt;- mutate(data, across(everything(), ~ gsub(x[i], y[i], .x)))
-      }
-      return(data)
-    }
-   
-    changefrom &lt;- c(&quot;NCD-Protect&quot;, &quot;NCD-Risk&quot;, &quot;Food system pathway&quot;, &quot;All 5 food groups&quot;)
-    changeto &lt;- c(&quot;dietary protection from non-communicable disease&quot;, &quot;dietary risk of non-communicable disease&quot;, &quot;food system transformation pathway&quot;, &quot;consuming all essential food groups&quot;)
-    searchterms &lt;- findreplace(changefrom, changeto, searchterms) 
-    searchterms &lt;- searchterms %&gt;% mutate(across(everything(), tolower))
-    changefrom &lt;- c(&quot;milan&quot;, &quot;gdp&quot;)
-    changeto &lt;- c(&quot;Milan&quot;, &quot;GDP&quot;)
-    searchterms &lt;- findreplace(changefrom, changeto, searchterms) 
-    
-# Save to the literature search folder as .csv
-    writexl::write_xlsx(searchterms, path = file.path(data_in, &quot;Search terms.xlsx&quot;), col_names = TRUE)</code></pre>
+<p>Agricultural land with minimum species richness</p>
+<p>First we need to bring in the 2010 data.</p>
+<pre><code>## # A tibble: 1 × 1
+##   n_species
+##       &lt;dbl&gt;
+## 1        24</code></pre>
+<p><span class="math inline">\(~\)</span></p>
+<p>Now we add the 2020 data.</p>
+<pre><code>## |---------|---------|---------|---------|=========================================                                          </code></pre>
+<p><span class="math inline">\(~\)</span></p>
+<p>Presence of any health-related food environment policies</p>
+<pre><code>##  [1] &quot;Give nutrition education and skills&quot;                                                      
+##  [2] &quot;Harness supply chain and actions across sectors to ensure coherence with health&quot;          
+##  [3] &quot;Improve nutritional quality of the whole food supply&quot;                                     
+##  [4] &quot;Inform people about food and nutrition through public awareness&quot;                          
+##  [5] &quot;Nutrition advice and counselling in healthcare settings&quot;                                  
+##  [6] &quot;Nutrition label standards and regulations on the use of claims and implied claims on food&quot;
+##  [7] &quot;Offer healthy food and set standards in public institutions and other specific settings&quot;  
+##  [8] &quot;Restrict food advertising and other forms of commercial promotion&quot;                        
+##  [9] &quot;Set incentives and rules to create a healthy retail and food service environment&quot;         
+## [10] &quot;Use economic tools to address food affordability and purchase incentives&quot;</code></pre>
+<p><span class="math inline">\(~\)</span></p>
+<p>Get the 2021 Right to food data</p>
+<p><span class="math inline">\(~\)</span></p>
+<p>Right to food - 2024</p>
+<p><span class="math inline">\(~\)</span></p>
+<p>Percent of urban population living in a city that has signed onto the
+Milan Urban Food Policy Pact. First get 2020 data.</p>
+<p><span class="math inline">\(~\)</span></p>
+<p>Now calculate updated data for 2023 (latest Landscan population data
+available are 2022, but the city list was updated Jan 2024).</p>
+<pre><code>## `summarise()` has grouped output by &#39;cities.country&#39;. You can override using
+## the `.groups` argument.</code></pre>
+<p><span class="math inline">\(~\)</span></p>
+<p>Save individual files by data source of cleaned data</p>
+</div>
+<div id="compile-final-dataset" class="section level4">
+<h4>Compile final dataset</h4>
+</div>
 </div>
 
 

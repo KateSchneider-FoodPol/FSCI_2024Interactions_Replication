@@ -39,7 +39,7 @@ This script contains all figures for the 2024 FSCI policy report.
     knitr::opts_knit$set('./')
     
     # Set relative directory paths
-    data_out <- here::here("Output Data")
+    data_out <- here::here("Output data")
     figtab_out <- here::here("Figures & Tables/Policy Report Figures")
 
 ### Set preferred options
@@ -104,7 +104,6 @@ phones <- FSCI_2024 %>%
   unique()
 
 print(phones)
-
 ```
 
 #### Figure 1: Regional data over time for selected indicators
