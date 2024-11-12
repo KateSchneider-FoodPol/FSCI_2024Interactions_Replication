@@ -1791,14 +1791,14 @@ $~$
                         vertices = network_df$vertices)
 
 # plot it
-  png(file.path(figtab_out, "SI Figure 24.png"), width = 8.5, height = 8.5, unit = "in", res = 300)
+  png(file.path(figtab_out, "SI Figure 24.png"), width = 10, height = 8.5, unit = "in", res = 300)
   igraph::plot.igraph(network2, edge.arrow.size = 0.2, layout = layout_with_fr,
        vertex.size = 10, 
        vertex.color = themes_colors[as.numeric(as.factor(vertex_attr(network2, "from_theme")))], 
        vertex.label.dist	= 0, 
        vertex.label.cex	= .5,
        vertex.label.color = "black") 
-  legend("topleft", 
+  legend('topleft', 
          cex = .8,
          bty = "n",
          legend = levels(df_from$from_theme),
@@ -1813,7 +1813,7 @@ $~$
        vertex.label.cex	= .5,
        vertex.label.color = "black") 
   legend("topleft", 
-         cex = .5,
+         cex = .4,
          bty = "n",
          legend = levels(df_from$from_theme),
          fill = themes_colors, 
