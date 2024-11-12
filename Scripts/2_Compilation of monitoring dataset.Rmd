@@ -62,7 +62,7 @@ $~$
 
 #### Import Data
 Data are imported by data source. First we import all sources that have an API in script 1 and load the archived dataset here. Next we import data from other direct downloads. Last, we import data that has to be manually downloaded first. Manually downloaded data are contained in the R project sub-folder "Input Data".
-```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+```{r, warning = FALSE, messages = FALSE}
 
 ### Load the data pulled in API pulls in Script 1
 
