@@ -1,0 +1,318 @@
+---
+title: "FSCI 2024 FAO Regional Briefs Figures"
+author: "Kate Schneider"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+### *Overall Objectives*
+This script contains regional figures for FAO regional briefs.
+
+```{r setup, warning = FALSE, messages = FALSE, results = "hide", echo = TRUE}
+### Setup required to knit this script into a markdown document
+    
+### Load packages
+    # R studio should prompt the installation of any packages not loaded on the instance where this script has been opened
+    
+    # Data management and multipurpose packages
+    library(knitr)
+    library(tidyverse)
+    library(here)
+
+    # Data visualization packages
+    library(cowplot)
+    library(flextable)
+    library(officer)
+
+### File management
+  
+    # Set the root folder to the project root so that all file paths are relative to the main project folder
+    knitr::opts_knit$set('./')
+    
+    # Set relative directory paths
+    data_out <- here::here("Output data")
+    figtab_out <- here::here("Figures & Tables/FAO Regional Briefs Figures")
+
+### Set preferred options
+    
+    # Set the treatment of numbers to numerical (avoids scientific notation from showing in results)
+    options(scipen = 999)
+  
+    # Set echo = FALSE for all code chunks will prevent the code from printing in the output file as the default setting (set to TRUE where relevant)
+    knitr::opts_chunk$set(echo = FALSE)
+
+### Functions
+    
+    # Create a "not in" operator
+    `%notin%` <- Negate(`%in%`) 
+    
+### Organization
+    col_order <- c("country", "M49_code", "ISO3", "indicator", 
+           "year", "value", "unit")
+    row_order <- c("country", "year", "variable_order")
+```
+
+#### Load data files
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+# Supplementary data file 1: "Supplementary Data 1 - Metadata and Codebook.xlsx"
+
+# Supplementary data file 2:
+FSCI_2024 <- readRDS(file = file.path(data_out, "FSCI_2024.rds"))
+```
+
+$~$
+
+#### Create figures for all indicators by region and theme
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+# Set up the data with only aggregate values
+    surveyindicators <- c("All 5 food groups", "Child labor", "Female landholdings", "Minimum dietary diversity, child", "Minimum dietary diversity, women", "NCD-Protect", "NCD-Risk", "Reduced coping strategies", "Social protection adequacy", "Social protection coverage", "Soft drink consumption", "Zero fruits or vegetables, adult", "Zero fruits or vegetables, child")
+    
+  # Recalculate the regional weighted mean for the 5 continents
+  regionmeans <- FSCI_2024 %>%
+    group_by(year, `UN Continental Region`, short_label) %>%  # Use backticks for column names with spaces
+    filter(!(is.na(`UN Continental Region`))) %>%
+    filter(!(is.na(value))) %>%
+    filter(!(is.na(weight))) %>%
+    mutate(across(c(value, weight), ~as.numeric(.))) %>%
+    summarize(regionmean = stats::weighted.mean(value, weight, na.rm = TRUE), .groups = 'drop') %>% 
+    ungroup() %>%
+    select(c(year, `UN Continental Region`, short_label, regionmean)) %>%
+    unique()
+
+  data <- FSCI_2024 %>%
+    filter(!(unit == "categorical")) %>%
+    filter(!(is.na(indicator_order))) %>%
+    # Eliminate survey indicators
+    filter(!(short_label %in% surveyindicators)) %>%
+    select(c(desirable_direction, year, country, value, short_label, indicator_order, 'UN Continental Region', globalmean, theme, unit)) %>% unique() %>%
+    arrange(indicator_order, year)
+  data <- left_join(data, regionmeans, by = c("year", 'UN Continental Region', "short_label"))
+  data <- data %>%
+    rename('Global weighted mean' = globalmean,
+           Region = 'UN Continental Region',
+           'Country value' = value,
+           'Regional weighted mean' = regionmean)  %>%
+    mutate(year = as.factor(year))
+  data <- droplevels(data)
+  data$short_label <- factor(data$short_label)
+  data <- data %>% droplevels()
+  
+  # Order themes
+  data$theme <- ordered(data$theme, levels = c("Diets, Nutrition, and Health", "Environment, natural resources, and production", "Livelihoods, Poverty, and Equity", "Governance", "Resilience"))
+
+  # Make global and continent means to be a country
+    toplot <- data %>%
+      relocate('Country value', .before = 'Regional weighted mean') %>%
+      relocate('Global weighted mean', .after = 'Regional weighted mean') %>%
+      mutate(across(9:11, ~as.numeric(.))) %>%
+      select(-c(1,3)) %>%
+      unique() %>%
+      arrange(indicator_order, year) %>%
+      mutate(year = as.factor(year))
+
+# Function to create a plot for a single indicator, region, and theme
+create_indicator_plot <- function(data, indicator, region, theme) {
+  
+  # Filter data for the specific indicator, region, and theme
+  indicator_data <- data %>%
+    filter(theme == !!theme, 
+           short_label == indicator,
+           Region == !!region)
+  
+  # Get the unit for this indicator
+  unit <- unique(indicator_data$unit)
+  
+  # Create separate dataframes
+  country_data <- indicator_data %>%
+    filter(!is.na(`Country value`)) %>%
+    select(year, `Country value`, Region, theme, short_label)
+  
+  regional_mean_data <- indicator_data %>%
+    filter(!is.na(`Regional weighted mean`)) %>%
+    select(year, `Regional weighted mean`, Region, theme, short_label) %>%
+    distinct()
+  
+  global_mean_data <- data %>%
+    filter(theme == !!theme,
+           short_label == indicator,
+           !is.na(`Global weighted mean`)) %>%
+    select(year, `Global weighted mean`, Region, theme, short_label) %>%
+    distinct()
+  
+  # Wrap the indicator text
+  wrapped_indicator <- str_wrap(indicator, width = 30)
+  
+  # Create the plot
+  p <- ggplot() +
+    geom_point(data = country_data, 
+               aes(x = year, y = `Country value`), 
+               color = "gray90", alpha = 0.5) +
+    geom_point(data = regional_mean_data, 
+               aes(x = year, y = `Regional weighted mean`), 
+               color = "maroon") +
+    geom_line(data = regional_mean_data, 
+              aes(x = year, y = `Regional weighted mean`, group = 1), 
+              color = "maroon", size = 0.5) +
+    geom_point(data = global_mean_data, 
+               aes(x = year, y = `Global weighted mean`), 
+               color = "gray25") +
+    geom_line(data = global_mean_data, 
+              aes(x = year, y = `Global weighted mean`, group = 1), 
+              color = "gray25", size = 0.5) +
+    theme_classic() +
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 8, angle = 90),
+          axis.text.x = element_text(size = 5, angle = 45, hjust = 1),
+          plot.title = element_text(size = 8, hjust = 0.5)) +
+    ggtitle(wrapped_indicator) +
+    ylab(unit)  # Add y-axis label using the unit
+  
+  return(p)
+}
+
+# Function to create a figure for each region-theme combination
+create_region_theme_figure <- function(region, theme) {
+  # Filter plots for this region and theme
+  region_theme_plots <- plot_list[plot_data$Region == region & plot_data$theme == theme]
+  
+  # Create a plot grid
+  plot_grid <- cowplot::plot_grid(plotlist = region_theme_plots, ncol = 3, align = "hv", scale = 0.9)
+
+  # Create a legend plot
+  legend_plot <- ggplot() +
+    geom_point(aes(x = 1, y = 1, color = "Country values"), size = 4) +
+    geom_point(aes(x = 2, y = 1, color = "Regional weighted mean"), size = 4) +
+    geom_point(aes(x = 3, y = 1, color = "Global weighted mean"), size = 4) +
+    scale_color_manual(values = c("Country values" = "gray90",
+                                   "Regional weighted mean" = "maroon",
+                                   "Global weighted mean" = "gray25")) +
+    theme_void() +
+    theme(legend.position = "right",
+          legend.title = element_blank(),
+          legend.text = element_text(size = 10)) +
+    guides(color = guide_legend(nrow = 1))
+
+  # Extract the legend
+  legend <- cowplot::get_legend(legend_plot)
+
+  # Add region and theme title
+  title <- cowplot::ggdraw() + 
+    draw_label(paste(theme, "-", region), fontface = 'bold', size = 12)
+
+  # Combine title, plot grid, and legend with a white background
+  plot_part1 <- cowplot::plot_grid(title, plot_grid,
+                              ncol = 1,
+                              rel_heights = c(0.05, 0.85),
+                              align = 'v', 
+                              axis = 'l')
+  
+  combined_plot <- cowplot::plot_grid(plot_part1, legend,
+                              ncol = 1,
+                              rel_heights = c(1, 0.10),
+                              align = 'v', 
+                              axis = 'l') +
+                    theme(plot.background = element_rect(fill="white")) # Set background to white
+
+  return(combined_plot)
+}
+
+# Get all unique combinations of indicators, regions, and themes
+plot_data <- toplot %>%
+  select(short_label, Region, theme) %>%
+  distinct()
+
+# Create a list of plots for each combination of indicators
+plot_list <- purrr::pmap(plot_data, function(short_label, Region, theme) {
+   create_indicator_plot(toplot, short_label, Region, theme)
+})
+
+# Get unique region-theme combinations
+region_theme_combos <- plot_data %>%
+   select(Region, theme) %>%
+   distinct()
+
+# Create a figure for each region-theme combination
+region_theme_figures <- purrr::pmap(region_theme_combos, function(Region, theme) {
+   create_region_theme_figure(Region, theme)
+})
+
+# Visualize each region-theme figure
+walk(region_theme_figures, print)
+
+# Loop through each figure and save it as PNG files
+for (i in seq_along(region_theme_figures)) {
+   # Construct the file name
+   file_name <- file.path(figtab_out, paste0("region-", i , ".png"))
+   
+   # Save the figure
+   ggsave(filename=file_name , plot=region_theme_figures[[i]], width=8 , height=10 , units="in", dpi=300)
+}
+
+
+```
+
+
+#### Table of regional and global means in latest year
+```{r, warning = FALSE, messages = FALSE, cache = TRUE}
+# Use toplot data frame created for figures
+  fortable <- toplot %>%
+  # Remove country level data
+  select(-c('Country value')) %>%
+  unique() %>%
+  filter(!(is.na(`Regional weighted mean`)))
+
+# Keep latest year per region-indicator
+  fortable <- fortable %>%
+    group_by(short_label, Region) %>%
+    mutate(maxyear = max(as.numeric(as.character(year)))) %>%
+    ungroup() %>%
+    filter(year == maxyear)
+
+# Reshape to table
+  fortable <- fortable %>%
+    select(year, short_label, theme, `Regional weighted mean`, `Global weighted mean`, unit, Region) %>%
+    relocate(unit, .after = short_label) %>%
+    relocate(`Regional weighted mean`, .after = Region) %>%
+    relocate(`Global weighted mean`, .after = `Regional weighted mean`) %>%
+    relocate(theme, .before = short_label) %>%
+    relocate(year, .before = Region) %>%
+    group_by(short_label) %>%
+    pivot_wider(names_from = Region,
+                values_from = `Regional weighted mean`) %>%
+    ungroup() %>%
+    rename("Latest year" = year,
+           Indicator = short_label,
+           Unit = unit,
+           Theme = theme) %>%
+    relocate(`Global weighted mean`, .after = Oceania)
+  
+# Round to 1 significant digit
+  fortable <- fortable %>%
+    mutate(across(where(is.numeric), ~ round(., digits = 1)))
+
+# Create table
+  table <- flextable::flextable(fortable) %>%
+    add_header_row(values = c("", "Regional weighted mean", ""),
+      colwidths = c(4,5,1)) %>%
+    merge_h(part = "header", i = 1) %>%
+    align(align = "center", part = "header") %>%
+    font(fontname = "Times New Roman", part = "all") %>%
+    fontsize(size = 11, part = "all") %>%
+    autofit() %>%
+    set_table_properties(layout = "autofit", width = 1)  
+  
+    # Save table
+    # Create a new Word document
+    doc <- read_docx()
+    
+    # Add the flextable to the document
+    doc <- body_add_flextable(doc, value = table)
+    
+    # Set the section to landscape
+    doc <- body_end_section_landscape(doc)
+    
+    # Save the document
+    print(doc, target = file.path(figtab_out, "Regional Means.docx"))
+
+  
+```
