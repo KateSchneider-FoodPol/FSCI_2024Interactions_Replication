@@ -84,7 +84,7 @@ $~$
     filter(!(is.na(indicator_order))) %>%
     # Eliminate survey indicators
     filter(!(short_label %in% surveyindicators)) %>%
-    select(c(desirable_direction, year, country, value, short_label, indicator_order, 'UN Continental Region', globalmean, theme, unit)) %>% unique() %>%
+    select(c(desirable_direction, year, country, value, short_label, indicator_order, 'UN Continental Region', globalmean, theme, unit, mean_weighting)) %>% unique() %>%
     arrange(indicator_order, year)
   data <- left_join(data, regionmeans, by = c("year", 'UN Continental Region', "short_label"))
   data <- data %>%
@@ -104,11 +104,30 @@ $~$
     toplot <- data %>%
       relocate('Country value', .before = 'Regional weighted mean') %>%
       relocate('Global weighted mean', .after = 'Regional weighted mean') %>%
-      mutate(across(9:11, ~as.numeric(.))) %>%
+      mutate(across(10:12, ~as.numeric(.))) %>%
       select(-c(1,3)) %>%
       unique() %>%
       arrange(indicator_order, year) %>%
-      mutate(year = as.factor(year))
+      mutate(year = as.factor(year)) %>%
+      # Rename levels of mean weighting for readability
+        mutate(mean_weighting = case_when(mean_weighting == "agland_ESA" ~ "Agricultural land (source: ESA)",
+                                          mean_weighting == "agland_minspecies" ~ "Agricultural land (source: FAO)",
+                                          mean_weighting == "animals_beef" ~ "Producing animals",
+                                          mean_weighting == "animals_cowmilk" ~ "Producing animals",
+                                          mean_weighting == "areaharvested_cereals" ~ "Area harvested",
+                                          mean_weighting == "areaharvested_fruit" ~ "Area harvested",
+                                          mean_weighting == "areaharvested_veg" ~ "Area harvested",
+                                          mean_weighting == "cropland" ~ "Total cropland",
+                                          mean_weighting == "landarea" ~ "Total land area",
+                                          mean_weighting == "pop_u" ~ "Urban population",
+                                          mean_weighting == "production_beef" ~ "Total production",
+                                          mean_weighting == "production_cerealsexclrice" ~ "Total production",
+                                          mean_weighting == "production_cowmilk" ~ "Total production",
+                                          mean_weighting == "production_rice" ~ "Total production",
+                                          mean_weighting == "totalpop" ~ "Population",
+                                          mean_weighting == "unweighted" ~ "Unweighted",
+                                          TRUE ~ mean_weighting)) %>%
+      rename("Mean weighted by" = mean_weighting) 
 
 # Function to create a plot for a single indicator, region, and theme
 create_indicator_plot <- function(data, indicator, region, theme) {
@@ -270,8 +289,9 @@ for (i in seq_along(region_theme_figures)) {
 
 # Reshape to table
   fortable <- fortable %>%
-    select(year, short_label, theme, `Regional weighted mean`, `Global weighted mean`, unit, Region) %>%
+    select(year, short_label, theme, `Regional weighted mean`, `Global weighted mean`, unit, `Mean weighted by`, Region) %>%
     relocate(unit, .after = short_label) %>%
+    relocate(`Mean weighted by`, .after = unit) %>%
     relocate(`Regional weighted mean`, .after = Region) %>%
     relocate(`Global weighted mean`, .after = `Regional weighted mean`) %>%
     relocate(theme, .before = short_label) %>%
@@ -293,7 +313,7 @@ for (i in seq_along(region_theme_figures)) {
 # Create table
   table <- flextable::flextable(fortable) %>%
     add_header_row(values = c("", "Regional weighted mean", ""),
-      colwidths = c(4,5,1)) %>%
+      colwidths = c(5,5,1)) %>%
     merge_h(part = "header", i = 1) %>%
     align(align = "center", part = "header") %>%
     font(fontname = "Times New Roman", part = "all") %>%
