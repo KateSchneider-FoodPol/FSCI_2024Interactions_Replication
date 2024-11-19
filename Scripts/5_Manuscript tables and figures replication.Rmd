@@ -261,6 +261,11 @@ $~$
     cowplot::plot_grid(p1, legend, nrow = 2, rel_heights = c(22,1), align = "v")
     dev.off()
     
+# And as PDF for journal
+    pdf(file.path(figtab_out, "Figure 1.pdf"), width = 7.5, height = 10)
+    cowplot::plot_grid(p1, legend, nrow = 2, rel_heights = c(22,1), align = "v")
+    dev.off()
+
 # Clean up
   rm(legend, p1, all_results2, data2, col_names, regress_tbl, all_results, data, surveyindicators, oneyear, Indicator, i, model, conf_int)  
   
@@ -303,6 +308,9 @@ $~$
   map
   
   tmap_save(map, file.path(figtab_out, "Figure 2.png"), width = 10, height = 3.5, dpi=300, units = "in")
+  
+  tmap_save(map, file.path(figtab_out, "Figure 2.pdf"), width = 10, height = 3.5, dpi=300, units = "in")
+
   
 # Clean up
   rm(data_simple, map, World)
@@ -388,6 +396,12 @@ $~$
   png(file.path(figtab_out, "Figure 3.png"), width = 7.5, height = 10, unit = "in", res = 300)
     cowplot::plot_grid(plot, legend, nrow = 2, rel_heights = c(20,1), align = 'v')
   dev.off()
+  
+# Save as PDF for journal
+    pdf(file.path(figtab_out, "Figure 3.pdf"), width = 7.5, height = 10)
+    cowplot::plot_grid(plot, legend, nrow = 2, rel_heights = c(20,1), align = 'v')
+  dev.off()
+
   
 # Clean up
   rm(plot, legend, forlegend)
@@ -533,6 +547,12 @@ $~$
   png(file.path(figtab_out, "Figure 4.png"), width = 10, height = 7.5, unit = "in", res = 300)
     cowplot::plot_grid(plot, table, ncol = 2, rel_widths = c(10,1), align = 'h')
   dev.off()
+  
+# Save as pdf
+    pdf(file.path(figtab_out, "Figure 4.pdf"), width = 10, height = 7.5)
+    cowplot::plot_grid(plot, table, ncol = 2, rel_widths = c(10,1), align = 'h')
+  dev.off()
+
 
 # Clean up
   rm(plot, table, gov_litcount_tbl, gov_litcount_total, gov_litcounts, gov_litcounts2, themes_info1, themes_info2)
