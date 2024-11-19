@@ -871,9 +871,21 @@ $~$
       mutate(across(2:6, round, 3)) %>% # This rounding step is consequential for the results - important to make a choice about how many digits to keep to "round to zero"
       relocate(star, .after = p.value)
     
+  # Get the sample size (countries by years) per indicator
+    samplesize <- data %>%
+      group_by(short_label) %>%
+      summarize("N countries" = n_distinct(country),
+                "Years" = min(year),
+                "Years2" = max(year),
+                "N years" = n_distinct(year)) %>%
+      ungroup()
+    regress_tbl <- left_join(regress_tbl, samplesize, by = c("short_label"))
+    
     # Name the columns nicely
-    col_names <- c( "Indicator", "Coef.", "SE", "p val.", "merge1", "95% Conf. Int.", "merge2", "Desirable direction")
+    col_names <- c( "Indicator", "Coef.", "SE", "p val.", "merge1", "95% Conf. Int.", "merge2", "Desirable direction", "N Countries", "Years", "merge3", "N years")
     colnames(regress_tbl) <- col_names
+    regress_tbl$Years <- as.character(regress_tbl$Years)
+    regress_tbl$merge3 <- as.character(regress_tbl$merge3)
     
 
 # Export table of full results
