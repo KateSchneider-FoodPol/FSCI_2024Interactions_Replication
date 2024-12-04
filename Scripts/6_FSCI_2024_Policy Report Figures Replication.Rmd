@@ -2,7 +2,7 @@
 title: "FSCI 2024 Policy report figures"
 author: "Kate Schneider"
 date: "`r Sys.Date()`"
-output: word_document
+output: html_document
 ---
 
 ### *Overall Objectives*
@@ -199,6 +199,9 @@ print(phones)
     png(file.path(figtab_out, "Figure 1.png"), width = 7.5, height = 10, unit = "in", res = 300)
         cowplot::plot_grid(p1,legend, nrow = 2, rel_heights = c(18,1), align = "hv")
     dev.off()
+    pdf(file.path(figtab_out, "Figure 1.pdf"), width = 7.5, height = 10)
+        cowplot::plot_grid(p1,legend, nrow = 2, rel_heights = c(18,1), align = "hv")
+    dev.off()
 
 
 ```
@@ -241,6 +244,9 @@ $~$
   map
   
   tmap_save(map, file.path(figtab_out, "Figure 2.png"), width = 10, height = 3.5, dpi=300, units = "in")
+  
+  tmap_save(map, file.path(figtab_out, "Figure 2.pdf"), width = 10, height = 3.5)
+
   
 # Clean up
   rm(data_simple, map, World)
@@ -327,6 +333,11 @@ $~$
     cowplot::plot_grid(plot, legend, nrow = 2, rel_heights = c(20,1), align = 'v')
   dev.off()
   
+  pdf(file.path(figtab_out, "Figure 3.pdf"), width = 7.5, height = 10)
+    cowplot::plot_grid(plot, legend, nrow = 2, rel_heights = c(20,1), align = 'v')
+  dev.off()
+
+  
 # Clean up
   rm(plot, legend, forlegend)
   
@@ -401,6 +412,30 @@ ggraph::ggraph(graph, layout="circle") +
   expand_limits(x = c(-1.5, 1.5), y = c(-1.7, 1.5)) 
 
 dev.off()
+
+pdf(file.path(figtab_out, "Figure 4.pdf"), width = 10, height = 7.5)
+
+ggraph::ggraph(graph, layout="circle") + 
+  ggraph::geom_edge_link(alpha=0.2, width=0.3) +
+  ggraph::geom_node_point(aes(size=n, color=as.factor(group), fill=group), alpha=0.9) +
+  scale_size_continuous(range=c(0.5,8)) +
+  scale_color_manual(values = themes_colors) +
+  ggraph::geom_node_text(aes(label=paste("    ",name,"    "), 
+                     angle=angle, hjust=hjust), size=2.3, color="black") +
+  theme_void() +
+  guides(color = guide_legend(order = 1,
+                              title = "Theme",
+                              override.aes = list(size = 5)),
+         size = guide_legend(order = 1, title = "Number of direct connections \n(from and to, combined)"),
+         fill = FALSE) +
+  theme(legend.position="right",
+    plot.margin=unit(c(0,0,0,0), "null"),
+    panel.spacing=unit(c(0,0,0,0), "null"),
+    plot.caption.position = "plot") +
+  expand_limits(x = c(-1.5, 1.5), y = c(-1.7, 1.5)) 
+
+dev.off()
+
 
 # Clean up
   rm(connect, connect_tbl, connections, graph)

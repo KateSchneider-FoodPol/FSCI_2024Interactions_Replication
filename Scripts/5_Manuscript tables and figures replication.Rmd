@@ -2,7 +2,7 @@
 title: "FSCI 2024 Analysis"
 author: "Kate Schneider"
 date: "`r Sys.Date()`"
-output: word_document
+output: html_document
 ---
 
 ### *Overall Objectives*
