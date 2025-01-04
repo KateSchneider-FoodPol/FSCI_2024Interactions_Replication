@@ -39,6 +39,7 @@ This script contains all figures for the 2024 FSCI policy report.
     knitr::opts_knit$set('./')
     
     # Set relative directory paths
+    data_in <- here::here("Input data")
     data_out <- here::here("Output data")
     figtab_out <- here::here("Figures & Tables/Policy Report Figures")
 
@@ -57,7 +58,7 @@ This script contains all figures for the 2024 FSCI policy report.
     
 ### Color palettes
     themes_colors <- c("#21908dff", "#3b518bff", "#97a4b2", "#fde725ff", "#5cc863ff")
-    categories <- c("#97ebdb", "#0086ad", "#005582", "gray80")
+    categories <- c("#e68127", "#ffbf00", "#4fa52e", "#c4c6c8")
     income_colors <- c("Low income" = "#97a4b2", 
                       "Lower middle income"  = "#41B6C4", 
                       "Upper middle income" = "#1D91C0", 
@@ -215,22 +216,36 @@ $~$
     data <- FSCI_2024 %>% 
       filter(indicator == "Presence of national health-related food environment policies" &
                year == 2023) %>%
-      rename(iso_a3_eh = ISO3) %>% # to match map country identifier
-      select(c(iso_a3_eh, value)) %>%
+      rename(iso3cd = ISO3) %>% # to match map country identifier
+      select(c(iso3cd, value)) %>%
       mutate(value = case_when(value == "economic" ~ "Economic",
                                value == "regulatory" ~ "Mandatory regulations",
                                value == "both" ~ "Both", 
-                               value == "none" ~ "None"),
-             value = factor(value, levels = c("Economic", "Mandatory regulations", "Both", "None")))
+                               value == "none" ~ "Missing data"),
+             value = factor(value, levels = c("Economic", "Mandatory regulations", "Both", "Missing data")))
   
-  # World map 
-    World <- rnaturalearth::ne_countries(scale = 110,  returnclass = c("sf"))  
-    
+  # Create basemap of official UN borders
+    # Read in shapefiles downloaded from: https://geoportal.un.org/arcgis/apps/sites/#/geohub/datasets/f86966528d5943efbdb83fd521dc0943/about
+      country_area <- sf::st_read(file.path(data_in, "UN_Geodata_simplified","BNDA_simplified.shp"))
+      country_borders <- sf::st_read(file.path(data_in, "UN_Geodata_simplified","BNDL_simplified.shp"))
+      water_bodies <- sf::st_read(file.path(data_in, "UN_Geodata_simplified","WBYA_simplified.shp"))
+
+      # Combine shapefiles
+      basemap_list <- list(country_area, country_borders, water_bodies)
+      basemap <- bind_rows(
+        country_area %>% mutate(layer = "area"),
+        country_borders %>% mutate(layer = "borders"),
+        water_bodies %>% mutate(layer = "water")
+      )
+      
+  # # World map 
+  #   World <- rnaturalearth::ne_countries(scale = 110,  returnclass = c("sf"))  
+  #   
   # Merging map with data
-  data_simple <- merge(World, data, by='iso_a3_eh',  duplicateGeoms = TRUE)
+    data_simple <- merge(basemap, data, by='iso3cd',  duplicateGeoms = TRUE)
   
-  #Turn off s2 processing to avoid invalid polygons
-  sf::sf_use_s2(FALSE)
+  # Turn off s2 processing to avoid invalid polygons
+    sf::sf_use_s2(FALSE)
   
   # Create map
     map <- tm_shape(data_simple) + 
