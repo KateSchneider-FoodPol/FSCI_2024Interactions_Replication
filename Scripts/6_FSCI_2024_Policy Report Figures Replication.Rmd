@@ -216,55 +216,62 @@ $~$
     data <- FSCI_2024 %>% 
       filter(indicator == "Presence of national health-related food environment policies" &
                year == 2023) %>%
-      rename(iso3cd = ISO3) %>% # to match map country identifier
-      select(c(iso3cd, value)) %>%
+      rename(isoclr = ISO3) %>% # to match map country identifier
+      select(c(isoclr, value)) %>%
       mutate(value = case_when(value == "economic" ~ "Economic",
                                value == "regulatory" ~ "Mandatory regulations",
                                value == "both" ~ "Both", 
                                value == "none" ~ "Missing data"),
              value = factor(value, levels = c("Economic", "Mandatory regulations", "Both", "Missing data")))
-  
-  # Create basemap of official UN borders
-    # Read in shapefiles downloaded from: https://geoportal.un.org/arcgis/apps/sites/#/geohub/datasets/f86966528d5943efbdb83fd521dc0943/about
-      country_area <- sf::st_read(file.path(data_in, "UN_Geodata_simplified","BNDA_simplified.shp"))
-      country_borders <- sf::st_read(file.path(data_in, "UN_Geodata_simplified","BNDL_simplified.shp"))
-      water_bodies <- sf::st_read(file.path(data_in, "UN_Geodata_simplified","WBYA_simplified.shp"))
 
-      # Combine shapefiles
-      basemap_list <- list(country_area, country_borders, water_bodies)
-      basemap <- bind_rows(
-        country_area %>% mutate(layer = "area"),
-        country_borders %>% mutate(layer = "borders"),
-        water_bodies %>% mutate(layer = "water")
-      )
-      
-  # # World map 
-  #   World <- rnaturalearth::ne_countries(scale = 110,  returnclass = c("sf"))  
-  #   
-  # Merging map with data
-    data_simple <- merge(basemap, data, by='iso3cd',  duplicateGeoms = TRUE)
-  
-  # Turn off s2 processing to avoid invalid polygons
-    sf::sf_use_s2(FALSE)
-  
-  # Create map
-    map <- tm_shape(data_simple) + 
-      tm_fill("value",
-                  style = "cat",
-                  palette = categories,
-                  title="") + 
-      tm_borders(col = "gray60", lwd = 0.5, lty = "solid", alpha = NA) +
-      tm_layout(frame = FALSE, legend.outside=TRUE)
-  
-  map
-  
-  tmap_save(map, file.path(figtab_out, "Figure 2.png"), width = 10, height = 3.5, dpi=300, units = "in")
-  
-  tmap_save(map, file.path(figtab_out, "Figure 2.pdf"), width = 10, height = 3.5)
+# These data are used as the input FSCI data layer in QGIS project file "FSCI 2025.qgz" file.
 
-  
-# Clean up
-  rm(data_simple, map, World)
+#   # Create basemap of official UN borders
+#     # Read in shapefiles downloaded from: https://geoportal.un.org/arcgis/apps/sites/#/geohub/datasets/f86966528d5943efbdb83fd521dc0943/about
+#       country_area <- sf::st_read(file.path(data_in, "UN_Geodata_simplified","BNDA_simplified.shp"))
+#       country_borders <- sf::st_read(file.path(data_in, "UN_Geodata_simplified","BNDL_simplified.shp"))
+#       water_bodies <- sf::st_read(file.path(data_in, "UN_Geodata_simplified","WBYA_simplified.shp"))
+# 
+#       # Combine shapefiles
+#       basemap_list <- list(country_area, country_borders, water_bodies)
+#       basemap <- bind_rows(
+#         country_area %>% mutate(layer = "area"),
+#         country_borders %>% mutate(layer = "borders"),
+#         water_bodies %>% mutate(layer = "water")
+#       )
+#       
+#   # Merging map with data
+#     data_simple <- merge(basemap, data, by='isoclr',  duplicateGeoms = TRUE)
+#     
+#   # Define border types
+#     data_simple$bdytyp <- factor(data_simple$bdytyp, 
+#                              levels = c(1, 3, 4), 
+#                              labels = c("solid", "dashed", "dotted"))
+#     
+#   # Turn off s2 processing to avoid invalid polygons
+#     sf::sf_use_s2(FALSE)
+#   
+#   # Create map
+#   map <- tm_shape(data_simple) + 
+#     tm_fill("value",
+#             style = "cat",
+#             palette = categories,
+#             title = "") + 
+#     tm_borders(col = "white", 
+#                lwd = 0.5, 
+#                lty = "bdytyp", 
+#                alpha = NA) +
+#     tm_layout(frame = FALSE, legend.outside = FALSE)
+#   
+#     map
+#   
+#   tmap_save(map, file.path(figtab_out, "Figure 2.png"), width = 10, height = 3.5, dpi=300, units = "in")
+#   
+#   tmap_save(map, file.path(figtab_out, "Figure 2.pdf"), width = 10, height = 3.5)
+# 
+#   
+# # Clean up
+#   rm(data_simple, map, World)
 
 ```
 
