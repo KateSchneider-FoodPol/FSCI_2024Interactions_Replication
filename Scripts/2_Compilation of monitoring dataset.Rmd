@@ -813,6 +813,8 @@ load(file.path(data_in, "mufpp_2023_archive.RData"))
       rm(cols)
     
 ### Euromonitor retail value of ultraprocessed foods
+      # To acces input data, visit https://www.foodsystemsdashboard.org/indicators/food-environments/product-properties/retail-value-of-ultra-processed-food-sales-per-capita/table and select Table view. Copy these data yourself into a file. Data should have columns: Country	2017	2018	2019	2020	2021 and be saved in an excel workbook titled "UPFretailval.xlsx" saved in the subfolder "Input Datasets" for the following code to work.
+ 
     upfretailval <- read_excel(file.path(data_in, "UPFretailval.xlsx"))
     upfretailval <- upfretailval %>%
       pivot_longer(2:6, names_to = "year", values_to = "value") %>%
